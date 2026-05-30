@@ -1,0 +1,61 @@
+name: megas_inventario
+description: App de inventario offline-first para MegasWeb
+publish_to: 'none'
+version: 1.2.9+21
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Base de datos local
+  drift: ^2.18.0
+  drift_flutter: ^0.2.0
+  sqlite3_flutter_libs: ^0.5.0
+
+  # Estado
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Configuración persistente
+  shared_preferences: ^2.3.2
+
+  # HTTP
+  dio: ^5.7.0
+
+  # Escaneo de códigos de barras
+  mobile_scanner: ^5.2.3
+
+  # Navegación
+  go_router: ^14.3.0
+
+  # Red
+  connectivity_plus: ^6.0.5
+
+  # SMB2 (modo legacy — acceso directo a DBF en servidor Windows)
+  dart_smb2: ^0.1.0
+
+  # Sonidos de feedback
+  audioplayers: ^6.0.0
+
+  # UI
+  flutter_speed_dial: ^7.0.0
+  cupertino_icons: ^1.0.8
+  intl: ^0.19.0
+  google_fonts: ^6.2.1
+  material_symbols_icons: ^4.2719.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.12
+  drift_dev: ^2.18.0
+  riverpod_generator: ^2.4.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
