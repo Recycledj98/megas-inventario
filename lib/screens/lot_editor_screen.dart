@@ -7,6 +7,7 @@ import '../database/tables.dart';
 import '../services/config_service.dart';
 import '../services/feedback_service.dart';
 import '../services/legacy_service.dart';
+import '../services/log_service.dart';
 import '../widgets/app_toast.dart';
 
 final _fmtNum = NumberFormat('#,##0.##', 'es_ES');
@@ -33,6 +34,7 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
   List<LineasInventarioLocalData> _lineas = [];
   List<StockLotesLocalData> _lotes = [];
   bool _changed = false;
+  String _activeTab = 'sesion';
 
   @override
   void initState() {
@@ -132,6 +134,7 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
         );
         if (mounted) AppToast.show(context, 'Artículo guardado');
       } catch (e) {
+        LogService.registrar('Error al guardar artículo «${art.identificacion}» en servidor: ${LogService.traducirError(e)}', isError: true);
         if (mounted) {
           AppToast.show(context, 'Error al guardar en el servidor: ${_simplifyError(e)}', error: true);
         }
@@ -166,6 +169,67 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
     _changed = true;
     FeedbackService.tap();
     await _load();
+  }
+
+  Widget _buildSesionContent(ThemeData theme, ColorScheme cs) {
+    if (_lineas.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Text(
+            'Sin líneas en esta sesión.\nUsa «Lotes en stock» o el botón Añadir.',
+            style: TextStyle(color: cs.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return ListView(
+      children: _lineas
+          .map((l) => _LineaTableRow(
+                linea: l,
+                theme: theme,
+                onEdit: () => _openLineaDialog(editing: l),
+                onDelete: () => _deleteLinea(l),
+              ))
+          .toList(),
+    );
+  }
+
+  Widget _buildLotesContent(ThemeData theme, ColorScheme cs) {
+    if (_lotes.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Text(
+            'Sin lotes en stock para este artículo.\n'
+            'Sincroniza el stock desde Configuración.',
+            style: TextStyle(color: cs.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return ListView(
+      children: _lotes.map((sl) {
+        final lineaDelLote =
+            _lineas.where((l) => l.codigoLote == sl.codigoLote).firstOrNull;
+        return _LoteTableRow(
+          lote: sl,
+          theme: theme,
+          lineaExistente: lineaDelLote,
+          onAnadir: () => _openLineaDialog(
+            preselLote:
+                sl.codigoLote != 'SIN_LOTE' ? sl.codigoLote : null,
+            preselCad:
+                sl.fechaCaducidad.year < 2090 ? sl.fechaCaducidad : null,
+          ),
+          onEditar: lineaDelLote != null
+              ? () => _openLineaDialog(editing: lineaDelLote)
+              : null,
+        );
+      }).toList(),
+    );
   }
 
   @override
@@ -228,110 +292,221 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
               ),
             ],
           ),
-          body: ListView(
-            padding: const EdgeInsets.only(bottom: 88),
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── Contado en sesión ──────────────────────────────
-              _SectionHeader(label: 'CONTADO EN SESIÓN', theme: theme),
-              if (_lineas.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 20),
-                  child: Text(
-                    'Sin líneas en esta sesión.\nUsa los lotes de abajo o añade una cantidad nueva.',
-                    style: TextStyle(color: cs.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                )
-              else
-                ..._lineas.map((l) => _LineaRow(
-                      linea: l,
+              // ── Lista principal ──────────────────────────────────
+              Expanded(
+                child: Column(
+                  children: [
+                    _TabSelector(
+                      lineasCount: _lineas.length,
+                      lotesCount: _lotes.length,
+                      activeTab: _activeTab,
                       theme: theme,
-                      onEdit: () => _openLineaDialog(editing: l),
-                      onDelete: () => _deleteLinea(l),
-                    )),
-
-              // ── Lotes en stock ─────────────────────────────────
-              _SectionHeader(label: 'LOTES EN STOCK', theme: theme),
-              if (_lotes.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 16),
-                  child: Text(
-                    'Sin lotes en stock para este artículo.\n'
-                    'Sincroniza el stock desde Configuración.',
-                    style: TextStyle(color: cs.onSurfaceVariant),
-                  ),
-                )
-              else
-                ..._lotes.map((sl) {
-                  final lineaDelLote = _lineas
-                      .where((l) => l.codigoLote == sl.codigoLote)
-                      .firstOrNull;
-                  return _LoteStockRow(
-                    lote: sl,
-                    theme: theme,
-                    lineaExistente: lineaDelLote,
-                    onAnadir: () => _openLineaDialog(
-                      preselLote: sl.codigoLote != 'SIN_LOTE'
-                          ? sl.codigoLote
-                          : null,
-                      preselCad: sl.fechaCaducidad.year < 2090
-                          ? sl.fechaCaducidad
-                          : null,
+                      onChanged: (tab) => setState(() => _activeTab = tab),
                     ),
-                    onEditar: lineaDelLote != null
-                        ? () => _openLineaDialog(editing: lineaDelLote)
-                        : null,
-                  );
-                }),
+                    _LoteTableHeader(
+                        theme: theme, showStock: _activeTab == 'lotes'),
+                    Divider(height: 1, thickness: 1, color: cs.outlineVariant),
+                    Expanded(
+                      child: _activeTab == 'sesion'
+                          ? _buildSesionContent(theme, cs)
+                          : _buildLotesContent(theme, cs),
+                    ),
+                  ],
+                ),
+              ),
+              // ── Panel de acciones (derecha) ──────────────────────
+              Container(
+                width: 110,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLow,
+                  border: Border(left: BorderSide(color: cs.outlineVariant)),
+                ),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: _PanelBtn(
+                        icon: Symbols.add_circle,
+                        label: 'Añadir\ncantidad',
+                        color: cs.primary,
+                        onTap: () => _openLineaDialog(),
+                      ),
+                    ),
+                    Divider(height: 1, color: cs.outlineVariant),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14, horizontal: 8),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Stock total',
+                            style: TextStyle(
+                                fontSize: 10, color: cs.onSurfaceVariant),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _fmtNum.format(_stockActual),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: _stockActual < 0
+                                  ? cs.error
+                                  : _stockActual == 0
+                                      ? Colors.amber.shade700
+                                      : cs.onSurface,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          Text(
+                            'uds',
+                            style: TextStyle(
+                                fontSize: 10, color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-          ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _openLineaDialog(),
-            icon: const Icon(Symbols.add),
-            label: const Text('Añadir cantidad'),
           ),
     );
   }
 }
 
-// ── Sección header ────────────────────────────────────────────────────────────
+// ── Anchos de columna de la tabla de lotes ────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
-  final String label;
+const _wCad = 92.0;
+const _wCant = 70.0;
+const _wAcciones = 88.0;
+const _lotColGap = 6.0;
+
+// ── Selector de pestaña (estilo _ConteoFilterRow de HomeScreen) ───────────────
+
+class _TabSelector extends StatelessWidget {
+  final int lineasCount;
+  final int lotesCount;
+  final String activeTab;
+  final ValueChanged<String> onChanged;
   final ThemeData theme;
-  const _SectionHeader({required this.label, required this.theme});
+
+  const _TabSelector({
+    required this.lineasCount,
+    required this.lotesCount,
+    required this.activeTab,
+    required this.onChanged,
+    required this.theme,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = theme.colorScheme;
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      color: cs.surfaceContainerHighest,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: cs.onSurfaceVariant,
-          letterSpacing: 1.2,
+      height: 34,
+      color: cs.surfaceContainerLowest,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          _chip(context, 'sesion', 'En sesión', lineasCount,
+              lineasCount > 0 ? cs.primary : cs.onSurfaceVariant, cs),
+          const SizedBox(width: 6),
+          _chip(context, 'lotes', 'Lotes en stock', lotesCount,
+              cs.onSurfaceVariant, cs),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, String value, String label, int count,
+      Color color, ColorScheme cs) {
+    final selected = activeTab == value;
+    return GestureDetector(
+      onTap: () => onChanged(value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected ? color.withAlpha(22) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? color : cs.outlineVariant,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight:
+                      selected ? FontWeight.w700 : FontWeight.w400,
+                  color: selected ? color : cs.onSurfaceVariant,
+                )),
+            const SizedBox(width: 4),
+            Text('$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? color : cs.onSurfaceVariant,
+                )),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Fila de línea contada ─────────────────────────────────────────────────────
+// ── Cabecera de tabla de lotes ────────────────────────────────────────────────
 
-class _LineaRow extends StatelessWidget {
+class _LoteTableHeader extends StatelessWidget {
+  final ThemeData theme;
+  final bool showStock;
+  const _LoteTableHeader({required this.theme, required this.showStock});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = theme.colorScheme;
+    final style = theme.textTheme.labelSmall?.copyWith(
+      color: cs.onSurfaceVariant,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.4,
+    );
+    return Container(
+      height: 30,
+      color: cs.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Expanded(child: Text('Código lote', style: style)),
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+              width: _wCad,
+              child: Text('Caducidad', style: style, textAlign: TextAlign.center)),
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+              width: _wCant,
+              child: Text(showStock ? 'Stock' : 'Cantidad',
+                  style: style, textAlign: TextAlign.right)),
+          const SizedBox(width: _wAcciones),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Fila de línea contada (tabla) ─────────────────────────────────────────────
+
+class _LineaTableRow extends StatelessWidget {
   final LineasInventarioLocalData linea;
   final ThemeData theme;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _LineaRow({
+  const _LineaTableRow({
     required this.linea,
     required this.theme,
     required this.onEdit,
@@ -345,52 +520,83 @@ class _LineaRow extends StatelessWidget {
     final cad = linea.fechaCaducidad;
     final isReal = lote != null && lote != 'SIN_LOTE';
 
-    return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Row(
-        children: [
-          if (isReal) ...[
-            Icon(Symbols.tag, size: 14, color: cs.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(lote,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                  overflow: TextOverflow.ellipsis),
-            ),
-          ] else
-            Expanded(
-              child: Text('Sin lote',
-                  style: TextStyle(color: cs.onSurfaceVariant)),
-            ),
-          Text(
-            _fmtNum.format(linea.stock),
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: cs.primary,
-            ),
-          ),
-          Text(' uds',
-              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
-        ],
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border:
+            Border(bottom: BorderSide(color: cs.outlineVariant.withAlpha(80))),
       ),
-      subtitle: cad != null && cad.year < 2090
-          ? Text('Cad: ${_fmtDate.format(cad)}',
-              style: const TextStyle(fontSize: 12))
-          : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Symbols.edit, size: 20),
-            onPressed: onEdit,
-            tooltip: 'Editar',
+          Expanded(
+            child: Row(
+              children: [
+                if (isReal) ...[
+                  Icon(Symbols.tag, size: 13, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 3),
+                ],
+                Expanded(
+                  child: Text(
+                    isReal ? lote ?? '' : 'Sin lote',
+                    style: TextStyle(
+                      fontWeight:
+                          isReal ? FontWeight.w500 : FontWeight.w400,
+                      color: isReal ? cs.onSurface : cs.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
-          IconButton(
-            icon: Icon(Symbols.delete, size: 20, color: cs.error),
-            onPressed: onDelete,
-            tooltip: 'Eliminar',
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+            width: _wCad,
+            child: Text(
+              cad != null && cad.year < 2090
+                  ? _fmtDate.format(cad)
+                  : '—',
+              style:
+                  TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+            width: _wCant,
+            child: Text(
+              _fmtNum.format(linea.stock),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: cs.primary,
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
+          SizedBox(
+            width: _wAcciones,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  icon: const Icon(Symbols.edit, size: 18),
+                  onPressed: onEdit,
+                  tooltip: 'Editar',
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
+                ),
+                IconButton(
+                  icon: Icon(Symbols.delete, size: 18, color: cs.error),
+                  onPressed: onDelete,
+                  tooltip: 'Eliminar',
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -398,16 +604,16 @@ class _LineaRow extends StatelessWidget {
   }
 }
 
-// ── Fila de lote en stock ─────────────────────────────────────────────────────
+// ── Fila de lote en stock (tabla) ─────────────────────────────────────────────
 
-class _LoteStockRow extends StatelessWidget {
+class _LoteTableRow extends StatelessWidget {
   final StockLotesLocalData lote;
   final ThemeData theme;
   final LineasInventarioLocalData? lineaExistente;
   final VoidCallback onAnadir;
   final VoidCallback? onEditar;
 
-  const _LoteStockRow({
+  const _LoteTableRow({
     required this.lote,
     required this.theme,
     required this.onAnadir,
@@ -422,74 +628,102 @@ class _LoteStockRow extends StatelessWidget {
     final isReal = lote.codigoLote != 'SIN_LOTE';
     final tieneApunte = lineaExistente != null;
 
-    return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Stack(
-        alignment: Alignment.bottomRight,
-        children: [
-          Icon(
-            isReal ? Symbols.tag : Symbols.inventory_2,
-            color: tieneApunte ? cs.primary : cs.onSurfaceVariant,
-          ),
-          if (tieneApunte)
-            Icon(Symbols.check_circle, size: 12, color: cs.primary),
-        ],
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: tieneApunte ? cs.primary.withAlpha(14) : null,
+        border:
+            Border(bottom: BorderSide(color: cs.outlineVariant.withAlpha(80))),
       ),
-      title: Row(
+      child: Row(
         children: [
           Expanded(
+            child: Row(
+              children: [
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      isReal ? Symbols.tag : Symbols.inventory_2,
+                      size: 15,
+                      color:
+                          tieneApunte ? cs.primary : cs.onSurfaceVariant,
+                    ),
+                    if (tieneApunte)
+                      Positioned(
+                        right: -4,
+                        bottom: -3,
+                        child: Icon(Symbols.check_circle,
+                            size: 9, color: cs.primary),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    isReal ? lote.codigoLote : 'Sin lote',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: tieneApunte ? cs.primary : cs.onSurface,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+            width: _wCad,
             child: Text(
-              isReal ? lote.codigoLote : 'Sin lote',
+              cad.year < 2090 ? _fmtDate.format(cad) : '—',
+              style:
+                  TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: _lotColGap),
+          SizedBox(
+            width: _wCant,
+            child: Text(
+              _fmtNum.format(lote.stock),
               style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: tieneApunte ? cs.primary : cs.onSurface,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
               ),
+              textAlign: TextAlign.right,
             ),
           ),
-          if (tieneApunte) ...[
-            const SizedBox(width: 8),
-            Text(
-              '→ ${_fmtNum.format(lineaExistente!.stock)} uds apuntados',
-              style: TextStyle(fontSize: 11, color: cs.primary),
+          SizedBox(
+            width: _wAcciones,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (tieneApunte)
+                  IconButton(
+                    icon: Icon(Symbols.edit, size: 18, color: cs.primary),
+                    tooltip: 'Editar apunte',
+                    onPressed: onEditar,
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                  ),
+                FilledButton.tonal(
+                  onPressed: onAnadir,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(52, 30),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(tieneApunte ? 'Anotar' : 'Añadir',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ],
             ),
-          ],
-        ],
-      ),
-      subtitle: cad.year < 2090
-          ? Text('Cad: ${_fmtDate.format(cad)}',
-              style: const TextStyle(fontSize: 12))
-          : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('Stock actual',
-                  style: TextStyle(
-                      fontSize: 10, color: cs.onSurfaceVariant)),
-              Text(
-                _fmtNum.format(lote.stock),
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: cs.onSurface),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          if (tieneApunte)
-            IconButton(
-              icon: Icon(Symbols.edit, size: 20, color: cs.primary),
-              tooltip: 'Editar apunte de este lote',
-              onPressed: onEditar,
-            ),
-          FilledButton.tonal(
-            onPressed: onAnadir,
-            style: FilledButton.styleFrom(
-                minimumSize: const Size(64, 36),
-                padding: const EdgeInsets.symmetric(horizontal: 12)),
-            child: const Text('Añadir'),
           ),
         ],
       ),
@@ -918,6 +1152,63 @@ class _ArticuloEditDialogState extends State<ArticuloEditDialog> {
   }
 }
 
+
+// ── Botón de panel lateral ────────────────────────────────────────────────────
+
+class _PanelBtn extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+
+  const _PanelBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.color,
+  });
+
+  @override
+  State<_PanelBtn> createState() => _PanelBtnState();
+}
+
+class _PanelBtnState extends State<_PanelBtn> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
+        width: double.infinity,
+        height: double.infinity,
+        color: _pressed ? widget.color.withAlpha(55) : Colors.transparent,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(widget.icon, color: widget.color, size: 34),
+            const SizedBox(height: 8),
+            Text(
+              widget.label,
+              style: TextStyle(
+                fontSize: 11,
+                color: widget.color,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 String _simplifyError(Object e) {
   final s = e.toString();
