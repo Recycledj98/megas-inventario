@@ -679,6 +679,8 @@ class _DialogLineaState extends State<_DialogLinea> {
                 TextField(
                   controller: _loteCtrl,
                   style: TextStyle(color: cs.onSurface),
+                  keyboardType: TextInputType.phone,
+                  textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
                     labelText: 'Código lote (opcional)',
                     prefixIcon: const Icon(Symbols.tag),
