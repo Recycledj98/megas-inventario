@@ -690,22 +690,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // Banner de versión — eliminar en próxima release
-          Container(
-            width: double.infinity,
-            color: Colors.green.shade600,
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: const Text(
-              '✓  Versión 2.0.3 instalada correctamente',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-
           // Barra de progreso global (E2)
           if (_loading)
             const LinearProgressIndicator()
