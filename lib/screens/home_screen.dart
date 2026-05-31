@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -152,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _sortOrder = 'ubicacion';
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  Timer? _searchDebounce;
 
 
   @override
@@ -170,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -186,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? IconButton(
                 icon: const Icon(Symbols.close, size: 18),
                 onPressed: () {
+                  _searchDebounce?.cancel();
                   _searchCtrl.clear();
                   setState(() => _search = '');
                   _loadData();
@@ -197,7 +201,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       onChanged: (v) {
         setState(() => _search = v);
-        _loadData();
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 300), _loadData);
       },
     );
   }
@@ -224,10 +229,14 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
     try {
       final eid = ConfigService.empresaId;
-      final almacenes = await _db.getAlmacenes(eid);
+
+      // Almacenes y cabeceras en paralelo — no dependen entre sí
+      final almacenesFut = _db.getAlmacenes(eid);
+      final cabecerasFut = _db.getCabeceras(eid);
+      final almacenes = await almacenesFut;
+      final cabs      = await cabecerasFut;
 
       // Sesión activa: la más reciente NO sincronizada
-      final cabs = await _db.getCabeceras(eid);
       CabecerasInventarioLocalData? cab;
       if (cabs.isNotEmpty) {
         final unsync = cabs.where((c) => !c.sincronizado);
@@ -241,16 +250,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Solo cargar artículos cuando hay sesión activa (F8)
       if (cab != null) {
-        arts = await _db.getArticulos(
+        // Artículos, stock y líneas en paralelo — solo dependen de cab.id/eid
+        final artsFut   = _db.getArticulos(
           eid,
           search: _search.isEmpty ? null : _search,
           proveedorNombre: _filterProveedorNombre,
           familiaNombre: _filterFamiliaNombre,
           sortOrder: _sortOrder,
         );
-        stk = await _db.getStockTotalPorArticulo(eid);
+        final stkFut    = _db.getStockTotalPorArticulo(eid);
+        final lineasFut = _db.getLineas(cab.id);
 
-        final lineas = await _db.getLineas(cab.id);
+        arts            = await artsFut;
+        stk             = await stkFut;
+        final lineas    = await lineasFut;
+
         for (final l in lineas) {
           cnt[l.articuloId] = (cnt[l.articuloId] ?? 0) + l.stock;
           lineasMap.putIfAbsent(l.articuloId, () => l);
@@ -259,17 +273,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _articulos = arts;
-          _stocks = stk;
-          _conteos = cnt;
-          _almacenes = almacenes;
+          _articulos      = arts;
+          _stocks         = stk;
+          _conteos        = cnt;
+          _almacenes      = almacenes;
           _activeCabecera = cab;
-          _lineasMap = lineasMap;
-          _loading = false;
+          _lineasMap      = lineasMap;
+          _loading        = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showSnack('Error cargando datos: $e', error: true);
+      }
     }
   }
 
