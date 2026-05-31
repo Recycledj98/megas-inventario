@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Auto-update operativo, filtro contados/sin contar, mejoras de rendimiento y UI"
+  "notas": "Teclado nativo en campo lote, mejoras de estabilidad"
 }
