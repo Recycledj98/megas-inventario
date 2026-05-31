@@ -690,7 +690,8 @@ class _DialogLineaState extends State<_DialogLinea> {
                   focusNode: _loteFocus,
                   style: TextStyle(color: cs.onSurface),
                   keyboardType: _loteNumerico
-                      ? TextInputType.phone
+                      ? const TextInputType.numberWithOptions(
+                          signed: false, decimal: false)
                       : TextInputType.text,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
