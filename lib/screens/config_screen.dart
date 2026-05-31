@@ -12,8 +12,10 @@ import '../database/tables.dart';
 import '../services/config_service.dart';
 import '../services/feedback_service.dart';
 import '../services/legacy_service.dart';
+import '../services/log_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/app_toast.dart';
+import 'log_screen.dart';
 
 const _kFonts = [
   'Inter', 'Roboto', 'Open Sans', 'Lato', 'Nunito', 'Poppins',
@@ -130,6 +132,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
       if (mounted) setState(() => _appVersion = i.version);
     });
 
+    // Restaurar backup de config si existe (p.ej. tras un downgrade que requirió desinstalar)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreBackupIfNeeded());
+
     if (!_legacyMode && ConfigService.serverUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _probar());
     }
@@ -156,6 +161,32 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (mounted && arts.isNotEmpty) {
       setState(() => _previewArticulos = arts.take(2).toList());
     }
+  }
+
+  Future<void> _restoreBackupIfNeeded() async {
+    final restored = await UpdateService.restoreConfigBackupIfExists();
+    if (!restored || !mounted) return;
+    // Recargar todo el estado desde la config restaurada
+    setState(() {
+      _legacyMode     = ConfigService.isLegacyMode;
+      _legacyUsuarios = List.from(ConfigService.legacyUsuarios);
+      _smbHostCtrl.text  = ConfigService.legacySmbHost;
+      _smbShareCtrl.text = ConfigService.legacySmbShare;
+      _smbPathCtrl.text  = ConfigService.legacySmbPath;
+      _smbUserCtrl.text  = ConfigService.legacySmbUser;
+      _smbPassCtrl.text  = ConfigService.legacySmbPass;
+      _legacyAlmacen     = ConfigService.legacyAlmacen;
+      _urlCtrl.text      = ConfigService.serverUrl;
+      _usuarioCtrl.text  = ConfigService.usuario;
+      _fontSize          = ConfigService.tableFontSize;
+      _fontFamily        = ConfigService.tableFont;
+      _fontBold          = ConfigService.tableFontBold;
+      _columns           = List.from(ConfigService.tableColumns);
+      if (_legacyMode && ConfigService.legacySmbHost.isNotEmpty) {
+        _legacyConectado = true;
+      }
+    });
+    AppToast.show(context, '✅ Configuración restaurada automáticamente');
   }
 
   Future<void> _loadSesionPendiente() async {
@@ -253,6 +284,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
         if (mounted) { _showMsg('Enviado: ${lineas.length} líneas'); await _loadSesionPendiente(); }
       }
     } catch (e) {
+      LogService.registrar('Error al enviar inventario: ${LogService.traducirError(e)}', isError: true);
       if (mounted) _showMsg('Error al enviar: $e', error: true);
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -298,6 +330,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
         if (mounted) { _showMsg('Stock recibido: ${result.stockLotes} registros'); await _loadSesionPendiente(); }
       }
     } catch (e) {
+      LogService.registrar('Error al recibir datos del servidor: ${LogService.traducirError(e)}', isError: true);
       if (mounted) _showMsg('Error al recibir: $e', error: true);
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -328,6 +361,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       }
       if (mounted) setState(() => _legacyConectado = true);
     } catch (e) {
+      LogService.registrar('Prueba de conexión al servidor fallida: ${LogService.traducirError(e)}', isError: true);
       if (mounted) setState(() => _legacyError = e.toString());
     } finally {
       if (mounted) setState(() => _legacyTestando = false);
@@ -608,6 +642,17 @@ class _ConfigScreenState extends State<ConfigScreen> {
               visualDensity: VisualDensity.compact,
             ),
             child: const _BtnRow(icon: Symbols.info, label: 'Acerca de'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LogScreen()),
+            ),
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(40),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const _BtnRow(icon: Symbols.assignment, label: 'Registro de incidencias'),
           ),
         ],
       ),
@@ -1637,7 +1682,7 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
   ReleaseInfo? _selectedRelease;
   bool _descargandoRelease = false;
   double _releaseProgress = 0;
-  bool _releaseError = false;
+  String? _releaseErrorMsg;
 
   Future<void> _cargarReleases() async {
     setState(() { _loadingReleases = true; _releasesError = null; });
@@ -1655,15 +1700,20 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
   Future<void> _instalarRelease() async {
     final r = _selectedRelease;
     if (r == null) return;
-    setState(() { _descargandoRelease = true; _releaseError = false; _releaseProgress = 0; });
+    setState(() { _descargandoRelease = true; _releaseErrorMsg = null; _releaseProgress = 0; });
     try {
+      // Guardar config antes de descargar para que sobreviva una posible desinstalación
+      await UpdateService.saveConfigBackup();
       await UpdateService.downloadAndInstall(
         r.url,
         onProgress: (p) { if (mounted) setState(() => _releaseProgress = p); },
       );
       if (mounted) Navigator.pop(context);
-    } catch (_) {
-      if (mounted) setState(() { _descargandoRelease = false; _releaseError = true; });
+    } catch (e) {
+      if (mounted) setState(() {
+        _descargandoRelease = false;
+        _releaseErrorMsg = e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
@@ -1839,6 +1889,8 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
                       DropdownButtonFormField<ReleaseInfo>(
                         value: _selectedRelease,
                         isExpanded: true,
+                        style: TextStyle(fontSize: 13, color: cs.onSurface),
+                        dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                         decoration: InputDecoration(
                           labelText: 'Seleccionar versión',
                           isDense: true,
@@ -1847,26 +1899,51 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
                         ),
                         items: _releases.map((r) => DropdownMenuItem(
                           value: r,
-                          child: Text('v${r.version}', style: const TextStyle(fontSize: 13)),
+                          child: Text('v${r.version}',
+                              style: TextStyle(fontSize: 13, color: cs.onSurface)),
                         )).toList(),
                         onChanged: _descargandoRelease
                             ? null
-                            : (v) => setState(() { _selectedRelease = v; _releaseError = false; }),
+                            : (v) => setState(() { _selectedRelease = v; _releaseErrorMsg = null; }),
                       ),
 
-                      // Notas de la versión seleccionada
-                      if (_selectedRelease != null && _selectedRelease!.notas.isNotEmpty) ...[
+                      // Notas + aviso downgrade
+                      if (_selectedRelease != null) ...[
                         const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest.withAlpha(120),
-                            borderRadius: BorderRadius.circular(8),
+                        // Aviso si es versión anterior a la instalada
+                        if (UpdateService.compareVersions(
+                              _selectedRelease!.version, widget.appVersion) < 0) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: cs.errorContainer.withAlpha(100),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(children: [
+                              Icon(Icons.warning_amber_rounded, size: 16, color: cs.error),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Android bloquea el downgrade. Desinstala la app primero y luego instala esta versión.',
+                                  style: TextStyle(fontSize: 11, color: cs.onErrorContainer),
+                                ),
+                              ),
+                            ]),
                           ),
-                          child: Text(_selectedRelease!.notas,
-                              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                        ),
+                          const SizedBox(height: 6),
+                        ],
+                        if (_selectedRelease!.notas.isNotEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHighest.withAlpha(120),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(_selectedRelease!.notas,
+                                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                          ),
                       ],
 
                       // Progreso + errores
@@ -1882,9 +1959,9 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
                           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
                         ),
                       ],
-                      if (_releaseError) ...[
+                      if (_releaseErrorMsg != null) ...[
                         const SizedBox(height: 6),
-                        Text('Error al descargar. Comprueba la conexión.',
+                        Text(_releaseErrorMsg!,
                             style: TextStyle(fontSize: 12, color: cs.error)),
                       ],
 

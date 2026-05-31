@@ -14,6 +14,7 @@ import '../services/sync_service.dart';
 import '../services/legacy_service.dart';
 import '../services/update_service.dart';
 import '../widgets/app_toast.dart';
+import '../services/log_service.dart';
 import 'lot_editor_screen.dart';
 
 final _fmt = NumberFormat('#,##0.00', 'es_ES');
@@ -349,12 +350,12 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await _sync.syncAll();
       if (mounted) {
-        _showSnack(
-            'Sincronizado: ${result.articulos} artículos, ${result.almacenes} almacenes');
+        _showSnack('Sincronizado con éxito');
         await _loadData();
         await _loadFilters();
       }
     } catch (e) {
+      LogService.registrar('Sincronización fallida: ${LogService.traducirError(e)}', isError: true);
       if (mounted) {
         _showSnack('Error de sincronización: $e', error: true);
         await _loadData();
@@ -382,11 +383,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final legacy = LegacyService(_db);
       final result = await legacy.recibir();
       if (mounted) {
-        _showSnack('Recibido: ${result.articulos} artículos, ${result.lotes} lotes');
+        _showSnack('Sincronizado con éxito');
         await _loadData();
         await _loadFilters();
       }
     } catch (e) {
+      LogService.registrar('Recepción de datos fallida: ${LogService.traducirError(e)}', isError: true);
       if (mounted) {
         _showSnack('Error al conectar con el servidor: $e', error: true);
         await _loadData();
@@ -486,6 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         if (mounted) _showSnack('Artículo guardado');
       } catch (e) {
+        LogService.registrar('Error al guardar artículo en servidor: ${LogService.traducirError(e)}', isError: true);
         if (mounted) _showSnack('Error DBF: $e', error: true);
       }
     }
@@ -510,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
           content: tieneLineas
               ? RichText(
                   text: TextSpan(
-                    style: Theme.of(ctx).textTheme.bodyMedium,
+                    style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
                     children: [
                       TextSpan(
                         text: 'Tienes ${_lineasMap.length} artículo(s) contados sin enviar.\n\n',
