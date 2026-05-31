@@ -20,6 +20,11 @@ workflows:
           pod install
           cd ..
 
+      - name: Inject build date
+        script: |
+          BUILD_DATE=$(date +%Y-%m-%d)
+          printf "// Regenerado automáticamente en cada build por codemagic.yaml\n// Para builds locales se mantiene la fecha del último commit\nconst String kBuildDate = '$BUILD_DATE';\n" > lib/build_info.dart
+
       - name: Generate Drift code (*.g.dart)
         script: flutter pub run build_runner build --delete-conflicting-outputs
 

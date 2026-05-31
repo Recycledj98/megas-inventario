@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../build_info.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1071,7 +1072,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
         children: [
           Row(
             children: [
-              Image.asset('assets/images/negro.png', height: 40,
+              Image.asset('assets/images/Logo_Inventario.png', height: 52,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink()),
               const SizedBox(width: 16),
               Expanded(
@@ -1087,6 +1088,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
                       Text('v$_appVersion',
                           style: TextStyle(
                               fontSize: 12, color: cs.onSurfaceVariant)),
+                    Text('Compilado: $kBuildDate',
+                        style: TextStyle(
+                            fontSize: 11, color: cs.onSurfaceVariant)),
                   ],
                 ),
               ),
