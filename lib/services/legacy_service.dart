@@ -388,12 +388,16 @@ class LegacyService {
           final loteRows = await _db.getStockLotes(_kLegacyEmpresaId, articuloId);
 
           for (final linea in artLineas) {
-            final lote = (linea.codigoLote ?? '').trim();
-            if (lote.isEmpty || lote == 'SIN_LOTE') continue;
+            final loteInterno = (linea.codigoLote ?? '').trim();
+            // SIN_LOTE interno → 'S/LOTE' en STOCKLOT.DBF del servidor
+            final lote = (loteInterno.isEmpty || loteInterno == 'SIN_LOTE')
+                ? 'S/LOTE'
+                : loteInterno;
 
             final newLoteStock = linea.stock;
+            // Buscar snapshot tanto por código interno como externo
             final loteSnap = loteRows
-                .where((r) => r.codigoLote == lote)
+                .where((r) => r.codigoLote == loteInterno || r.codigoLote == lote)
                 .fold<double>(0, (s, r) => s + r.stock);
             final loteDiff = newLoteStock - loteSnap;
 
