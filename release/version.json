@@ -1,5 +1,5 @@
 {
-  "version": "2.1.8",
+  "version": "2.1.9",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Registro de incidencias con mensajes en español para soporte técnico"
+  "notas": "Errores SMB más precisos en el registro (archivo no encontrado vs. sin conexión)"
 }

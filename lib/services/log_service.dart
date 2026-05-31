@@ -85,44 +85,85 @@ class LogService {
   }
 
   /// Traduce excepciones técnicas a texto comprensible para el usuario.
+  /// Incluye el error técnico entre paréntesis para que el técnico pueda diagnosticar.
   static String traducirError(Object e) {
     final s = e.toString();
+    final raw = s.length > 100 ? '${s.substring(0, 100)}…' : s;
+
+    // ── Errores SMB específicos (deben ir ANTES del catch genérico de SMB) ──
+    // Archivo o carpeta no encontrada en el servidor de archivos
+    if (s.contains('STATUS_OBJECT_NAME_NOT_FOUND') ||
+        s.contains('STATUS_NO_SUCH_FILE') ||
+        s.contains('STATUS_OBJECT_PATH_NOT_FOUND') ||
+        s.contains('STATUS_BAD_NETWORK_NAME') ||
+        s.contains('STATUS_OBJECT_NAME_INVALID')) {
+      return 'Archivo o carpeta no encontrada en el servidor (¿cambió el nombre del fichero DBF?) — $raw';
+    }
+    // Acceso denegado al fichero
+    if (s.contains('STATUS_ACCESS_DENIED') ||
+        s.contains('STATUS_SHARING_VIOLATION')) {
+      return 'Sin permiso para acceder al archivo en el servidor (fichero en uso o sin permisos) — $raw';
+    }
+    // Credenciales SMB inválidas
+    if (s.contains('STATUS_LOGON_FAILURE') ||
+        s.contains('STATUS_WRONG_PASSWORD') ||
+        s.contains('STATUS_NO_SUCH_USER') ||
+        s.contains('STATUS_ACCOUNT_DISABLED')) {
+      return 'Usuario o contraseña incorrectos para el servidor de archivos — $raw';
+    }
+    // Ruta compartida no encontrada (share incorrecto)
+    if (s.contains('STATUS_BAD_NETWORK_PATH') ||
+        s.contains('STATUS_NETWORK_NAME_DELETED')) {
+      return 'La carpeta compartida no existe en el servidor (comprueba el nombre de recurso compartido) — $raw';
+    }
+
+    // ── Errores de red generales ────────────────────────────────────────────
     if (s.contains('SocketException') ||
         s.contains('Connection refused') ||
-        s.contains('Network is unreachable')) {
-      return 'No se pudo conectar al servidor (sin red o servidor apagado)';
+        s.contains('Network is unreachable') ||
+        s.contains('Connection timed out')) {
+      return 'No se pudo conectar al servidor (sin red o servidor apagado) — $raw';
     }
-    if (s.contains('TimeoutException') || s.contains('timeout')) {
-      return 'La conexión tardó demasiado y se canceló (tiempo de espera agotado)';
+    if (s.contains('TimeoutException') ||
+        s.contains('timed out') ||
+        s.contains('timeout')) {
+      return 'La conexión tardó demasiado y se canceló (tiempo de espera agotado) — $raw';
     }
     if (s.contains('HandshakeException') || s.contains('certificate')) {
-      return 'Error de seguridad en la conexión (certificado SSL inválido)';
+      return 'Error de seguridad en la conexión (certificado SSL inválido) — $raw';
     }
+
+    // ── Errores HTTP ────────────────────────────────────────────────────────
     if (s.contains('401') || s.contains('Unauthorized')) {
-      return 'Credenciales incorrectas (usuario o contraseña inválidos)';
+      return 'Credenciales incorrectas (usuario o contraseña inválidos) — $raw';
     }
     if (s.contains('403') || s.contains('Forbidden')) {
-      return 'Sin permiso para acceder a este recurso';
+      return 'Sin permiso para acceder a este recurso — $raw';
     }
     if (s.contains('404') || s.contains('Not Found')) {
-      return 'Recurso no encontrado en el servidor';
+      return 'Recurso no encontrado en el servidor — $raw';
     }
     if (s.contains('500') || s.contains('Internal Server Error')) {
-      return 'Error interno del servidor';
+      return 'Error interno del servidor — $raw';
     }
-    if (s.contains('SMB') || s.contains('smb') || s.contains('Smb')) {
-      return 'Error al conectar con el servidor de archivos (SMB)';
+
+    // ── SMB genérico (al final, solo si no se identificó antes) ────────────
+    if (s.contains('SMB') || s.contains('smb') || s.contains('Smb') ||
+        s.contains('SmbException')) {
+      return 'Error de comunicación con el servidor de archivos — $raw';
+    }
+
+    // ── Otros ───────────────────────────────────────────────────────────────
+    if (s.contains('PathNotFoundException') || s.contains('No such file')) {
+      return 'No se encontró el archivo — $raw';
     }
     if (s.contains('DatabaseException') || s.contains('SqliteException')) {
-      return 'Error en la base de datos local';
+      return 'Error en la base de datos local — $raw';
     }
     if (s.contains('FormatException') || s.contains('JSON')) {
-      return 'Los datos recibidos del servidor tienen un formato incorrecto';
+      return 'Los datos recibidos tienen un formato incorrecto — $raw';
     }
-    if (s.contains('PathNotFoundException') || s.contains('No such file')) {
-      return 'No se encontró el archivo en el servidor';
-    }
-    // Recortar mensajes muy largos
-    return s.length > 120 ? '${s.substring(0, 120)}…' : s;
+
+    return raw;
   }
 }
