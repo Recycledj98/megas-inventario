@@ -13,6 +13,19 @@ class UpdateInfo {
   const UpdateInfo({required this.version, required this.url, required this.notas});
 }
 
+class ReleaseInfo {
+  final String version;   // tag sin 'v', p.ej. "2.1.1"
+  final String tagName;   // tag original, p.ej. "v2.1.1"
+  final String notas;
+  final String url;       // URL directa del APK asset
+  const ReleaseInfo({
+    required this.version,
+    required this.tagName,
+    required this.notas,
+    required this.url,
+  });
+}
+
 class UpdateService {
   static const _versionUrl =
       'https://github.com/Recycledj98/megas-inventario'
@@ -81,6 +94,36 @@ class UpdateService {
     } catch (e) {
       return (update: null, error: e.toString(), instalada: null, disponible: null);
     }
+  }
+
+  static const _releasesUrl =
+      'https://api.github.com/repos/Recycledj98/megas-inventario/releases';
+
+  /// Devuelve la lista de releases publicados en GitHub, más reciente primero.
+  /// Cada release debe tener un asset llamado "megas_inventario.apk".
+  static Future<List<ReleaseInfo>> getReleases() async {
+    final resp = await _dio.get<List<dynamic>>(
+      _releasesUrl,
+      options: Options(headers: {'Accept': 'application/vnd.github+json'}),
+    );
+    final list = resp.data ?? [];
+    final result = <ReleaseInfo>[];
+    for (final item in list) {
+      final tag = (item['tag_name'] as String? ?? '').trim();
+      final body = (item['body'] as String? ?? '').trim();
+      final assets = item['assets'] as List<dynamic>? ?? [];
+      String apkUrl = '';
+      for (final asset in assets) {
+        if ((asset['name'] as String? ?? '').endsWith('.apk')) {
+          apkUrl = (asset['browser_download_url'] as String? ?? '').trim();
+          break;
+        }
+      }
+      if (tag.isEmpty || apkUrl.isEmpty) continue;
+      final version = tag.startsWith('v') ? tag.substring(1) : tag;
+      result.add(ReleaseInfo(version: version, tagName: tag, notas: body, url: apkUrl));
+    }
+    return result;
   }
 
   static bool _isNewer(String latest, String current) {

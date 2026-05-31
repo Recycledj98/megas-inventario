@@ -478,6 +478,7 @@ class LegacyService {
   Future<void> saveArticuloFields(
     String codigoArt, {
     String? cbarra,
+    String? ubicacion,
     double? peso,
     double? unicaj,
     double? unipal,
@@ -488,10 +489,11 @@ class LegacyService {
       final idx = artDbf.findByKey({'CODIGO_ART': codigoArt});
       if (idx < 0) throw LegacyException('Artículo no encontrado: $codigoArt');
       final updates = <String, dynamic>{};
-      if (cbarra != null) updates['CBARRA_ART'] = cbarra;
-      if (peso   != null) updates['PESO_ART']   = peso;
-      if (unicaj != null) updates['UNICAJ_ART'] = unicaj;
-      if (unipal != null) updates['UNIPAL_ART'] = unipal;
+      if (cbarra    != null) updates['CBARRA_ART']  = cbarra;
+      if (ubicacion != null) updates['UBICAC_ART']  = ubicacion;
+      if (peso      != null) updates['PESO_ART']    = peso;
+      if (unicaj    != null) updates['UNICAJ_ART']  = unicaj;
+      if (unipal    != null) updates['UNIPAL_ART']  = unipal;
       if (updates.isNotEmpty) artDbf.setFields(idx, updates);
       await _writeFile(smb, 'ARTICULO.DBF', artDbf.toBytes());
     } finally {

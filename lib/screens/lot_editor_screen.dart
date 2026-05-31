@@ -65,6 +65,7 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
     DateTime? preselCad,
   }) async {
     final result = await showDialog<_LineaResult>(
+      barrierDismissible: false,
       context: context,
       builder: (_) => _DialogLinea(
         articulo: widget.articulo,
@@ -102,6 +103,7 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
   Future<void> _openArticuloEdit() async {
     final art = widget.articulo;
     final result = await showDialog<ArticuloEditResult>(
+      barrierDismissible: false,
       context: context,
       builder: (_) => ArticuloEditDialog(articulo: art),
     );
@@ -110,31 +112,38 @@ class _LotEditorScreenState extends State<LotEditorScreen> {
     await _db.updateArticuloFields(
       ConfigService.isLegacyMode ? 0 : ConfigService.empresaId,
       art.articuloId,
-      cbarra: result.cbarra,
-      peso:   result.peso,
-      unicaj: result.unicaj,
-      unipal: result.unipal,
+      cbarra:    result.cbarra,
+      ubicacion: result.ubicacion,
+      peso:      result.peso,
+      unicaj:    result.unicaj,
+      unipal:    result.unipal,
     );
-    // Escribir a ARTICULO.DBF vía SMB
-    try {
-      final svc = LegacyService(_db);
-      await svc.saveArticuloFields(
-        art.identificacion,
-        cbarra: result.cbarra,
-        peso:   result.peso,
-        unicaj: result.unicaj,
-        unipal: result.unipal,
-      );
-      if (mounted) AppToast.show(context, 'Artículo guardado');
-    } catch (e) {
-      if (mounted) {
-        AppToast.show(context, 'Error al guardar en el servidor: ${_simplifyError(e)}', error: true);
+    if (ConfigService.isLegacyMode) {
+      // Escribir a ARTICULO.DBF vía SMB
+      try {
+        final svc = LegacyService(_db);
+        await svc.saveArticuloFields(
+          art.identificacion,
+          cbarra:    result.cbarra,
+          ubicacion: result.ubicacion,
+          peso:      result.peso,
+          unicaj:    result.unicaj,
+          unipal:    result.unipal,
+        );
+        if (mounted) AppToast.show(context, 'Artículo guardado');
+      } catch (e) {
+        if (mounted) {
+          AppToast.show(context, 'Error al guardar en el servidor: ${_simplifyError(e)}', error: true);
+        }
       }
+    } else {
+      if (mounted) AppToast.show(context, 'Artículo guardado');
     }
   }
 
   Future<void> _deleteLinea(LineasInventarioLocalData linea) async {
     final ok = await showDialog<bool>(
+      barrierDismissible: false,
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar línea'),
@@ -744,10 +753,11 @@ class _DialogLineaState extends State<_DialogLinea> {
 
 class ArticuloEditResult {
   final String? cbarra;
+  final String? ubicacion;
   final double? peso;
   final double? unicaj;
   final double? unipal;
-  const ArticuloEditResult({this.cbarra, this.peso, this.unicaj, this.unipal});
+  const ArticuloEditResult({this.cbarra, this.ubicacion, this.peso, this.unicaj, this.unipal});
 }
 
 class ArticuloEditDialog extends StatefulWidget {
@@ -759,6 +769,7 @@ class ArticuloEditDialog extends StatefulWidget {
 
 class _ArticuloEditDialogState extends State<ArticuloEditDialog> {
   late final TextEditingController _cbarraCtrl;
+  late final TextEditingController _ubicacionCtrl;
   late final TextEditingController _pesoCtrl;
   late final TextEditingController _unicajCtrl;
   late final TextEditingController _unipalCtrl;
@@ -767,16 +778,17 @@ class _ArticuloEditDialogState extends State<ArticuloEditDialog> {
   void initState() {
     super.initState();
     final a = widget.articulo;
-    _cbarraCtrl = TextEditingController(text: a.codigoAlternativo1 ?? '');
-    _pesoCtrl   = TextEditingController(text: a.peso   != null ? _fmtNum.format(a.peso)   : '');
-    _unicajCtrl = TextEditingController(text: a.unicaj != null ? _fmtNum.format(a.unicaj) : '');
-    _unipalCtrl = TextEditingController(text: a.unipal != null ? _fmtNum.format(a.unipal) : '');
+    _cbarraCtrl    = TextEditingController(text: a.codigoAlternativo1 ?? '');
+    _ubicacionCtrl = TextEditingController(text: a.ubicacion ?? '');
+    _pesoCtrl      = TextEditingController(text: a.peso   != null ? _fmtNum.format(a.peso)   : '');
+    _unicajCtrl    = TextEditingController(text: a.unicaj != null ? _fmtNum.format(a.unicaj) : '');
+    _unipalCtrl    = TextEditingController(text: a.unipal != null ? _fmtNum.format(a.unipal) : '');
   }
 
   @override
   void dispose() {
-    _cbarraCtrl.dispose(); _pesoCtrl.dispose();
-    _unicajCtrl.dispose(); _unipalCtrl.dispose();
+    _cbarraCtrl.dispose(); _ubicacionCtrl.dispose();
+    _pesoCtrl.dispose(); _unicajCtrl.dispose(); _unipalCtrl.dispose();
     super.dispose();
   }
 
@@ -789,10 +801,11 @@ class _ArticuloEditDialogState extends State<ArticuloEditDialog> {
 
   void _submit() {
     Navigator.pop(context, ArticuloEditResult(
-      cbarra: _cbarraCtrl.text.trim().isEmpty ? null : _cbarraCtrl.text.trim(),
-      peso:   _parseNum(_pesoCtrl.text),
-      unicaj: _parseNum(_unicajCtrl.text),
-      unipal: _parseNum(_unipalCtrl.text),
+      cbarra:    _cbarraCtrl.text.trim().isEmpty    ? null : _cbarraCtrl.text.trim(),
+      ubicacion: _ubicacionCtrl.text.trim().isEmpty ? null : _ubicacionCtrl.text.trim(),
+      peso:      _parseNum(_pesoCtrl.text),
+      unicaj:    _parseNum(_unicajCtrl.text),
+      unipal:    _parseNum(_unipalCtrl.text),
     ));
   }
 
@@ -835,6 +848,15 @@ class _ArticuloEditDialogState extends State<ArticuloEditDialog> {
                 decoration: _dec('Código de barras', icon: Symbols.qr_code),
                 keyboardType: TextInputType.text,
                 onTap: () => _selectAll(_cbarraCtrl),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _ubicacionCtrl,
+                style: TextStyle(color: cs.onSurface),
+                decoration: _dec('Ubicación', hint: 'A-01-2', icon: Symbols.location_on),
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.characters,
+                onTap: () => _selectAll(_ubicacionCtrl),
               ),
               const SizedBox(height: 12),
               Row(

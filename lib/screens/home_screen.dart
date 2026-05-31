@@ -370,8 +370,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final update = await UpdateService.checkForUpdate();
     if (update == null || !mounted) return;
     showDialog(
-      context: context,
       barrierDismissible: false,
+      context: context,
       builder: (_) => _UpdateDialog(update: update),
     );
   }
@@ -431,6 +431,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (linea == null) return;
 
     final ok = await showDialog<bool>(
+      barrierDismissible: false,
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar conteo'),
@@ -458,6 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final art = _selected;
     if (art == null) return;
     final result = await showDialog<ArticuloEditResult>(
+      barrierDismissible: false,
       context: context,
       builder: (_) => ArticuloEditDialog(articulo: art),
     );
@@ -465,20 +467,22 @@ class _HomeScreenState extends State<HomeScreen> {
     await _db.updateArticuloFields(
       ConfigService.isLegacyMode ? 0 : ConfigService.empresaId,
       art.articuloId,
-      cbarra: result.cbarra,
-      peso:   result.peso,
-      unicaj: result.unicaj,
-      unipal: result.unipal,
+      cbarra:    result.cbarra,
+      ubicacion: result.ubicacion,
+      peso:      result.peso,
+      unicaj:    result.unicaj,
+      unipal:    result.unipal,
     );
     if (ConfigService.isLegacyMode) {
       try {
         final svc = LegacyService(_db);
         await svc.saveArticuloFields(
           art.identificacion,
-          cbarra: result.cbarra,
-          peso:   result.peso,
-          unicaj: result.unicaj,
-          unipal: result.unipal,
+          cbarra:    result.cbarra,
+          ubicacion: result.ubicacion,
+          peso:      result.peso,
+          unicaj:    result.unicaj,
+          unipal:    result.unipal,
         );
         if (mounted) _showSnack('Artículo guardado');
       } catch (e) {
@@ -491,6 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _doSalir() async {
     final tieneLineas = _lineasMap.isNotEmpty;
     final ok = await showDialog<bool>(
+      barrierDismissible: false,
       context: context,
       builder: (ctx) {
         final cs = Theme.of(ctx).colorScheme;
