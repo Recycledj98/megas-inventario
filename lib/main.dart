@@ -71,19 +71,16 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
 
-  static const _kBg       = Color(0xFF0A1628);
-  static const _kAccent   = Color(0xFF1A73E8);
-
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 800),
     );
     _fade  = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _slide = Tween<Offset>(
-      begin: const Offset(0, 0.12),
+      begin: const Offset(0, 0.1),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
 
@@ -103,139 +100,44 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: _kBg,
-      body: Stack(
-        children: [
-          // Círculo decorativo superior-derecha
-          Positioned(
-            top: -size.width * 0.25,
-            right: -size.width * 0.15,
-            child: Container(
-              width: size.width * 0.75,
-              height: size.width * 0.75,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    _kAccent.withAlpha(35),
-                    Colors.transparent,
-                  ],
+      backgroundColor: Colors.white,
+      body: Center(
+        child: FadeTransition(
+          opacity: _fade,
+          child: SlideTransition(
+            position: _slide,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/images/negro.png',
+                  width: 180,
+                  fit: BoxFit.contain,
                 ),
-              ),
+                const SizedBox(height: 28),
+                const Text(
+                  'Megas Inventario',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF1A73E8),
+                  ),
+                ),
+              ],
             ),
           ),
-          // Círculo decorativo inferior-izquierda
-          Positioned(
-            bottom: -size.width * 0.2,
-            left: -size.width * 0.2,
-            child: Container(
-              width: size.width * 0.65,
-              height: size.width * 0.65,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    _kAccent.withAlpha(20),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Contenido central
-          Center(
-            child: FadeTransition(
-              opacity: _fade,
-              child: SlideTransition(
-                position: _slide,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Tarjeta con logo
-                    Container(
-                      width: 140,
-                      height: 140,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(12),
-                        borderRadius: BorderRadius.circular(32),
-                        border: Border.all(
-                          color: Colors.white.withAlpha(20),
-                        ),
-                      ),
-                      padding: const EdgeInsets.all(24),
-                      child: Image.asset(
-                        'assets/images/negro.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.inventory_2_rounded,
-                          size: 64,
-                          color: _kAccent,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 36),
-
-                    // Nombre
-                    const Text(
-                      'MEGAS',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 7,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'INVENTARIO',
-                      style: TextStyle(
-                        color: _kAccent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 9,
-                      ),
-                    ),
-
-                    const SizedBox(height: 72),
-
-                    // Spinner sutil
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.8,
-                        color: Colors.white.withAlpha(60),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Versión abajo
-          Positioned(
-            bottom: 28,
-            left: 0,
-            right: 0,
-            child: FadeTransition(
-              opacity: _fade,
-              child: Text(
-                'v1.2.9',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withAlpha(45),
-                  fontSize: 11,
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
