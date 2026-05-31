@@ -1,7 +1,7 @@
 name: megas_inventario
 description: App de inventario offline-first para MegasWeb
 publish_to: 'none'
-version: 2.1.9+36
+version: 2.2.0+37
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

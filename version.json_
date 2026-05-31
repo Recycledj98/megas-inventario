@@ -1,5 +1,5 @@
 {
-  "version": "2.1.9",
+  "version": "2.2.0",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Errores SMB más precisos en el registro (archivo no encontrado vs. sin conexión)"
+  "notas": "Auditoría permanente de movimientos y configuración (nunca se borra)"
 }

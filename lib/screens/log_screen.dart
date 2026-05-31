@@ -15,7 +15,11 @@ class LogScreen extends StatefulWidget {
 }
 
 class _LogScreenState extends State<LogScreen> {
-  List<LogEntry> _todos = [];
+  // 'incidencias' | 'auditoria'
+  String _vista = 'incidencias';
+
+  List<LogEntry> _incidencias = [];
+  List<LogEntry> _auditoria = [];
   bool _soloErrores = false;
   bool _cargando = true;
 
@@ -27,29 +31,41 @@ class _LogScreenState extends State<LogScreen> {
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
-    final logs = await LogService.obtenerRegistros();
-    if (mounted) setState(() { _todos = logs; _cargando = false; });
+    final results = await Future.wait([
+      LogService.obtenerRegistros(),
+      LogService.obtenerAuditoria(),
+    ]);
+    if (mounted) {
+      setState(() {
+        _incidencias = results[0];
+        _auditoria = results[1];
+        _cargando = false;
+      });
+    }
   }
 
-  List<LogEntry> get _filtrados =>
-      _soloErrores ? _todos.where((e) => e.isError).toList() : _todos;
+  List<LogEntry> get _incidenciasFiltradas =>
+      _soloErrores ? _incidencias.where((e) => e.isError).toList() : _incidencias;
+
+  List<LogEntry> get _entradas =>
+      _vista == 'auditoria' ? _auditoria : _incidenciasFiltradas;
 
   Future<void> _copiarTodo() async {
-    final lineas = _filtrados.map((e) {
-      final prefijo = e.isError ? '❌' : '✓';
+    final lineas = _entradas.map((e) {
+      final prefijo = e.isAudit ? '📋' : e.isError ? '❌' : '✓';
       return '$prefijo [${_fmtTs.format(e.timestamp)}] ${e.mensaje}';
     }).join('\n');
     await Clipboard.setData(ClipboardData(text: lineas));
     if (mounted) AppToast.show(context, 'Registro copiado al portapapeles');
   }
 
-  Future<void> _limpiar() async {
+  Future<void> _limpiarIncidencias() async {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Limpiar registro'),
-        content: const Text('¿Eliminar todos los mensajes del registro?'),
+        title: const Text('Limpiar incidencias'),
+        content: const Text('¿Eliminar todos los mensajes de incidencias?\n\nEl registro de auditoría NO se borrará.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -66,31 +82,33 @@ class _LogScreenState extends State<LogScreen> {
     if (ok != true) return;
     await LogService.limpiar();
     await _cargar();
-    if (mounted) AppToast.show(context, 'Registro limpiado');
+    if (mounted) AppToast.show(context, 'Incidencias limpiadas');
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final filtrados = _filtrados;
-    final errores = _todos.where((e) => e.isError).length;
+    final entradas = _entradas;
+    final errores = _incidencias.where((e) => e.isError).length;
+    final esAuditoria = _vista == 'auditoria';
 
     return Scaffold(
       appBar: AppBar(
         foregroundColor: cs.onSurface,
-        title: const Text('Registro de incidencias'),
+        title: const Text('Registros'),
         actions: [
           IconButton(
             icon: const Icon(Symbols.copy_all),
             tooltip: 'Copiar todo',
-            onPressed: filtrados.isEmpty ? null : _copiarTodo,
+            onPressed: entradas.isEmpty ? null : _copiarTodo,
           ),
-          IconButton(
-            icon: Icon(Symbols.delete_sweep, color: cs.error),
-            tooltip: 'Limpiar registro',
-            onPressed: _todos.isEmpty ? null : _limpiar,
-          ),
+          if (!esAuditoria)
+            IconButton(
+              icon: Icon(Symbols.delete_sweep, color: cs.error),
+              tooltip: 'Limpiar incidencias',
+              onPressed: _incidencias.isEmpty ? null : _limpiarIncidencias,
+            ),
           IconButton(
             icon: const Icon(Symbols.refresh),
             tooltip: 'Actualizar',
@@ -101,54 +119,100 @@ class _LogScreenState extends State<LogScreen> {
       ),
       body: Column(
         children: [
-          // ── Barra de filtro ─────────────────────────────────────
+          // ── Selector de vista ────────────────────────────────────
           Container(
             color: cs.surfaceContainerLowest,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
             child: Row(
               children: [
                 _Chip(
-                  label: 'Todos',
-                  count: _todos.length,
-                  selected: !_soloErrores,
+                  label: 'Incidencias',
+                  count: _incidencias.length,
+                  selected: !esAuditoria,
                   color: cs.primary,
-                  onTap: () => setState(() => _soloErrores = false),
+                  onTap: () => setState(() => _vista = 'incidencias'),
                 ),
                 const SizedBox(width: 8),
                 _Chip(
-                  label: 'Solo errores',
-                  count: errores,
-                  selected: _soloErrores,
-                  color: cs.error,
-                  onTap: () => setState(() => _soloErrores = true),
+                  label: 'Auditoría',
+                  count: _auditoria.length,
+                  selected: esAuditoria,
+                  color: Colors.green.shade700,
+                  onTap: () => setState(() => _vista = 'auditoria'),
                 ),
                 const Spacer(),
-                if (!_cargando)
-                  Text(
-                    '${filtrados.length} mensaje${filtrados.length == 1 ? '' : 's'}',
-                    style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                if (esAuditoria)
+                  Row(
+                    children: [
+                      Icon(Symbols.lock, size: 13, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 3),
+                      Text('Solo lectura',
+                          style: TextStyle(
+                              fontSize: 11, color: cs.onSurfaceVariant)),
+                    ],
                   ),
               ],
             ),
           ),
+
+          // ── Sub-filtro (solo en vista incidencias) ───────────────
+          if (!esAuditoria)
+            Container(
+              color: cs.surfaceContainerLowest,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Row(
+                children: [
+                  _Chip(
+                    label: 'Todos',
+                    count: _incidencias.length,
+                    selected: !_soloErrores,
+                    color: cs.onSurfaceVariant,
+                    onTap: () => setState(() => _soloErrores = false),
+                  ),
+                  const SizedBox(width: 8),
+                  _Chip(
+                    label: 'Solo errores',
+                    count: errores,
+                    selected: _soloErrores,
+                    color: cs.error,
+                    onTap: () => setState(() => _soloErrores = true),
+                  ),
+                  const Spacer(),
+                  if (!_cargando)
+                    Text(
+                      '${entradas.length} mensaje${entradas.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                          fontSize: 11, color: cs.onSurfaceVariant),
+                    ),
+                ],
+              ),
+            ),
+
           Divider(height: 1, color: cs.outlineVariant),
 
           // ── Lista ───────────────────────────────────────────────
           Expanded(
             child: _cargando
                 ? const Center(child: CircularProgressIndicator())
-                : filtrados.isEmpty
+                : entradas.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Symbols.check_circle,
-                                size: 64, color: cs.outlineVariant),
+                            Icon(
+                              esAuditoria
+                                  ? Symbols.assignment
+                                  : Symbols.check_circle,
+                              size: 64,
+                              color: cs.outlineVariant,
+                            ),
                             const SizedBox(height: 16),
                             Text(
-                              _soloErrores
-                                  ? 'Sin errores registrados'
-                                  : 'El registro está vacío',
+                              esAuditoria
+                                  ? 'Sin movimientos registrados todavía'
+                                  : _soloErrores
+                                      ? 'Sin errores registrados'
+                                      : 'El registro está vacío',
                               style: theme.textTheme.titleMedium
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),
@@ -156,9 +220,9 @@ class _LogScreenState extends State<LogScreen> {
                         ),
                       )
                     : ListView.builder(
-                        itemCount: filtrados.length,
+                        itemCount: entradas.length,
                         itemBuilder: (ctx, i) =>
-                            _EntradaRow(entry: filtrados[i], theme: theme),
+                            _EntradaRow(entry: entradas[i], theme: theme),
                       ),
           ),
         ],
@@ -233,9 +297,16 @@ class _EntradaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = theme.colorScheme;
-    final color = entry.isError ? cs.error : cs.onSurfaceVariant;
-    final bgColor =
-        entry.isError ? cs.error.withAlpha(10) : Colors.transparent;
+    final color = entry.isError
+        ? cs.error
+        : entry.isAudit
+            ? Colors.green.shade700
+            : cs.onSurfaceVariant;
+    final bgColor = entry.isError
+        ? cs.error.withAlpha(10)
+        : entry.isAudit
+            ? Colors.green.withAlpha(10)
+            : Colors.transparent;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -248,7 +319,11 @@ class _EntradaRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            entry.isError ? Symbols.error : Symbols.info,
+            entry.isError
+                ? Symbols.error
+                : entry.isAudit
+                    ? Symbols.assignment_turned_in
+                    : Symbols.info,
             size: 16,
             color: color,
           ),

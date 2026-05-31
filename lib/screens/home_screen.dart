@@ -339,6 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
       descripcion: Value(descripcion),
       fechaCreacion: Value(DateTime.now()),
     ));
+    LogService.auditar('Nueva sesión de inventario creada: "$descripcion" (almacén $almacenId, usuario: ${ConfigService.usuario})');
     await _loadData();
     return _activeCabecera;
   }
@@ -349,6 +350,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _syncing = true);
     try {
       final result = await _sync.syncAll();
+      LogService.auditar('Sincronización completada: ${result.articulos} artículos, ${result.almacenes} almacenes');
       if (mounted) {
         _showSnack('Sincronizado con éxito');
         await _loadData();
@@ -382,6 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final legacy = LegacyService(_db);
       final result = await legacy.recibir();
+      LogService.auditar('Recepción completada: ${result.articulos} artículos, ${result.lotes} lotes');
       if (mounted) {
         _showSnack('Sincronizado con éxito');
         await _loadData();

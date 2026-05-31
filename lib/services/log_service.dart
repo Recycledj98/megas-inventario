@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
-enum LogNivel { info, error }
+enum LogNivel { info, error, auditoria }
 
 class LogEntry {
   final DateTime timestamp;
@@ -11,9 +11,12 @@ class LogEntry {
   LogEntry(this.timestamp, this.mensaje, this.nivel);
 
   bool get isError => nivel == LogNivel.error;
+  bool get isAudit => nivel == LogNivel.auditoria;
 
   String toLine() {
-    final n = isError ? 'E' : 'I';
+    final n = nivel == LogNivel.error ? 'E'
+        : nivel == LogNivel.auditoria ? 'A'
+        : 'I';
     return '${timestamp.toIso8601String()}|$n|$mensaje';
   }
 
@@ -22,7 +25,9 @@ class LogEntry {
     if (parts.length < 3) return null;
     final ts = DateTime.tryParse(parts[0]);
     if (ts == null) return null;
-    final nivel = parts[1] == 'E' ? LogNivel.error : LogNivel.info;
+    final nivel = parts[1] == 'E' ? LogNivel.error
+        : parts[1] == 'A' ? LogNivel.auditoria
+        : LogNivel.info;
     final msg = parts.sublist(2).join('|');
     return LogEntry(ts, msg, nivel);
   }
@@ -31,18 +36,26 @@ class LogEntry {
 class LogService {
   static const _maxEntradas = 300;
   static const _fileName = 'inventario_log.txt';
+  static const _auditFileName = 'inventario_auditoria.txt';
 
   static Future<File> _archivo() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/$_fileName');
   }
 
-  /// Registra un mensaje. Llamar con `isError: true` para errores.
-  static void registrar(String mensaje, {bool isError = false}) {
-    _escribir(mensaje, isError ? LogNivel.error : LogNivel.info);
+  static Future<File> _archivoAuditoria() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_auditFileName');
   }
 
-  static void _escribir(String mensaje, LogNivel nivel) async {
+  // ── Incidencias (errores, borrables) ────────────────────────────────────────
+
+  /// Registra un mensaje de error o info. Borrable por el usuario.
+  static void registrar(String mensaje, {bool isError = false}) {
+    _escribirIncidencia(mensaje, isError ? LogNivel.error : LogNivel.info);
+  }
+
+  static void _escribirIncidencia(String mensaje, LogNivel nivel) async {
     try {
       final file = await _archivo();
       final entry = LogEntry(DateTime.now(), mensaje, nivel);
@@ -62,7 +75,7 @@ class LogService {
     } catch (_) {}
   }
 
-  /// Devuelve las entradas ordenadas de más reciente a más antigua.
+  /// Devuelve las incidencias ordenadas de más reciente a más antigua.
   static Future<List<LogEntry>> obtenerRegistros() async {
     try {
       final file = await _archivo();
@@ -77,11 +90,39 @@ class LogService {
     }
   }
 
+  /// Borra el log de incidencias. El de auditoría NO se puede borrar.
   static Future<void> limpiar() async {
     try {
       final file = await _archivo();
       if (await file.exists()) await file.delete();
     } catch (_) {}
+  }
+
+  // ── Auditoría (movimientos y config, NUNCA se borra) ────────────────────────
+
+  /// Registra un evento de auditoría permanente: envíos, recepciones, cambios de config.
+  static void auditar(String mensaje) async {
+    try {
+      final file = await _archivoAuditoria();
+      final entry = LogEntry(DateTime.now(), mensaje, LogNivel.auditoria);
+      await file.writeAsString('${entry.toLine()}\n',
+          mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+
+  /// Devuelve el registro de auditoría de más reciente a más antiguo.
+  static Future<List<LogEntry>> obtenerAuditoria() async {
+    try {
+      final file = await _archivoAuditoria();
+      if (!await file.exists()) return [];
+      final lineas = await file.readAsLines();
+      return lineas.reversed
+          .map(LogEntry.fromLine)
+          .whereType<LogEntry>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Traduce excepciones técnicas a texto comprensible para el usuario.

@@ -274,6 +274,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       if (_legacyMode) {
         final result = await _legacy.enviar(cab, lineas);
         await _db.cerrarCabecera(cab.id);
+        LogService.auditar('Inventario enviado (ERP): ${result.inventariados} artículos, ${result.movimientos} movimientos — sesión "${cab.descripcion}", usuario: ${ConfigService.usuario}');
         if (mounted) {
           _showMsg('Enviado: ${result.inventariados} artículos, ${result.movimientos} movimientos E/S');
           await _loadSesionPendiente();
@@ -281,6 +282,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       } else {
         final servidorId = await _sync.sendInventario(cab, lineas);
         await _db.marcarCabeceraSync(cab.id, servidorId);
+        LogService.auditar('Inventario enviado (API): ${lineas.length} líneas — sesión "${cab.descripcion}", usuario: ${ConfigService.usuario}');
         if (mounted) { _showMsg('Enviado: ${lineas.length} líneas'); await _loadSesionPendiente(); }
       }
     } catch (e) {
@@ -320,6 +322,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
           await ConfigService.saveLegacyUsuarios(result.usuarios);
           if (mounted) setState(() => _legacyUsuarios = result.usuarios);
         }
+        LogService.auditar('Recepción completada (ERP): ${result.articulos} artículos, ${result.lotes} lotes');
         if (mounted) {
           _showMsg('Recibido: ${result.articulos} artículos, ${result.lotes} lotes');
           await _loadSesionPendiente();
@@ -327,6 +330,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       } else {
         final result = await _sync.syncStock();
         if (_sesionPendiente != null) await _db.cerrarCabecera(_sesionPendiente!.id);
+        LogService.auditar('Recepción completada (API): ${result.stockLotes} registros de stock');
         if (mounted) { _showMsg('Stock recibido: ${result.stockLotes} registros'); await _loadSesionPendiente(); }
       }
     } catch (e) {
@@ -394,6 +398,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
     await ConfigService.saveDisplay(tableFontSize: _fontSize, tableFont: _fontFamily, tableFontBold: _fontBold);
     await ConfigService.saveColumns(_columns);
+    LogService.auditar('Configuración guardada: modo ERP Windows, servidor ${_smbHostCtrl.text.trim()}, almacén $_legacyAlmacen, usuario ${_usuarioCtrl.text.trim()}');
     if (!mounted) return;
     if (widget.isInitialSetup) {
       context.go('/');
@@ -422,6 +427,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
     await ConfigService.saveDisplay(tableFontSize: _fontSize, tableFont: _fontFamily, tableFontBold: _fontBold);
     await ConfigService.saveColumns(_columns);
+    LogService.auditar('Configuración guardada: modo API, empresa ${_empresaSel!.nombre} (#${_empresaSel!.id}), usuario ${_usuarioCtrl.text.trim()}');
     if (!mounted) return;
     if (widget.isInitialSetup) {
       context.go('/');
