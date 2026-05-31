@@ -1146,20 +1146,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Logo
-                    Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(
-                        color: cs.primaryContainer,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: Icon(Symbols.inventory_2, size: 44, color: cs.primary),
-                    ),
+                    Image.asset('assets/images/Logo_Inventario.png',
+                        height: 90,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                     const SizedBox(height: 20),
                     Text('Megas Inventario',
                         style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     Text(
-                      'Conecta con tu servidor ERP Windows para comenzar',
+                      'Configuración inicial',
                       style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
