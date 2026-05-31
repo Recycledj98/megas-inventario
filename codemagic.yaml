@@ -1,0 +1,35 @@
+workflows:
+  ios-build:
+    name: iOS Build (sin firma)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: 3.44.0
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Disable Swift Package Manager
+        script: flutter config --no-enable-swift-package-manager
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Inject build date
+        script: |
+          BUILD_DATE=$(date +%Y-%m-%d)
+          printf "// Regenerado automáticamente en cada build por codemagic.yaml\n// Para builds locales se mantiene la fecha del último commit\nconst String kBuildDate = '$BUILD_DATE';\n" > lib/build_info.dart
+
+      - name: Generate Drift code (*.g.dart)
+        script: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build iOS Simulator (no requiere firma)
+        script: flutter build ios --simulator --debug
+
+    artifacts:
+      - build/ios/iphonesimulator/Runner.app

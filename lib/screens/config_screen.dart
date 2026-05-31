@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../build_info.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -69,9 +71,12 @@ class _ConfigScreenState extends State<ConfigScreen> {
   bool           _fontBold   = false;
   List<ColConfig> _columns   = [];
 
+  List<ArticulosLocalData> _previewArticulos = [];
+  String _appVersion = '';
   CabecerasInventarioLocalData? _sesionPendiente;
   int    _lineasPendientes    = 0;
   bool   _syncing             = false;
+  bool   _guardado            = false;
   String? _mensajeInventario;
   bool   _mensajeError        = false;
 
@@ -119,6 +124,10 @@ class _ConfigScreenState extends State<ConfigScreen> {
     }
 
     _loadSesionPendiente();
+    _loadPreviewArticulos();
+    PackageInfo.fromPlatform().then((i) {
+      if (mounted) setState(() => _appVersion = i.version);
+    });
 
     if (!_legacyMode && ConfigService.serverUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _probar());
@@ -138,6 +147,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  Future<void> _loadPreviewArticulos() async {
+    if (!ConfigService.isConfigured) return;
+    final eid = ConfigService.isLegacyMode ? 0 : ConfigService.empresaId;
+    final arts = await _db.getArticulos(eid, sortOrder: 'ubicacion');
+    if (mounted && arts.isNotEmpty) {
+      setState(() => _previewArticulos = arts.take(2).toList());
+    }
+  }
 
   Future<void> _loadSesionPendiente() async {
     final eid = _legacyMode ? 0 : ConfigService.empresaId;
@@ -343,8 +361,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (widget.isInitialSetup) {
       context.go('/');
     } else {
-      _showMsg('Configuración guardada');
-      context.pop();
+      setState(() => _guardado = true);
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (mounted) context.pop();
     }
   }
 
@@ -370,8 +389,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (widget.isInitialSetup) {
       context.go('/');
     } else {
-      AppToast.show(context, 'Configuración guardada');
-      context.pop();
+      setState(() => _guardado = true);
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (mounted) context.pop();
     }
   }
 
@@ -404,10 +424,22 @@ class _ConfigScreenState extends State<ConfigScreen> {
           if (_canSave)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: FilledButton.icon(
-                onPressed: _guardar,
-                icon: const Icon(Symbols.save, size: 18),
-                label: const Text('Guardar'),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: _guardado
+                    ? FilledButton.icon(
+                        key: const ValueKey('saved'),
+                        onPressed: null,
+                        icon: const Icon(Symbols.check, size: 18),
+                        label: const Text('Guardado'),
+                        style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600),
+                      )
+                    : FilledButton.icon(
+                        key: const ValueKey('save'),
+                        onPressed: _guardar,
+                        icon: const Icon(Symbols.save, size: 18),
+                        label: const Text('Guardar'),
+                      ),
               ),
             ),
           // La "ruleta" — acceso oculto al modo API
@@ -501,13 +533,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
       _buildVisualizacionCard(theme, cs),
       const SizedBox(height: 16),
       _buildColumnasCard(theme, cs),
-      const SizedBox(height: 24),
-      FilledButton.icon(
-        onPressed: _canSave ? _guardar : null,
-        icon: const Icon(Symbols.check, size: 18),
-        label: const Text('Guardar configuración'),
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-      ),
+      const SizedBox(height: 16),
+      _buildAcercaDeCard(theme, cs),
     ];
   }
 
@@ -953,13 +980,29 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 Text('Previsualización',
                     style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant, letterSpacing: 0.5)),
                 const SizedBox(height: 6),
-                Text('REF-001234   Tornillo M6 inox 304   12,00 uds',
-                    style: _previewStyle().copyWith(color: cs.onSurface),
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text('ART005   Moritz Botella 33cl Caja 24   36,00 uds',
-                    style: _previewStyle().copyWith(color: cs.onSurfaceVariant),
-                    overflow: TextOverflow.ellipsis),
+                ...(_previewArticulos.isEmpty
+                    ? [
+                        Text('REF-001234   Tornillo M6 inox 304',
+                            style: _previewStyle().copyWith(color: cs.onSurface),
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text('ART005   Moritz Botella 33cl x24',
+                            style: _previewStyle().copyWith(color: cs.onSurfaceVariant),
+                            overflow: TextOverflow.ellipsis),
+                      ]
+                    : [
+                        for (int i = 0; i < _previewArticulos.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 2),
+                          Text(
+                            '${_previewArticulos[i].identificacion}   '
+                            '${_previewArticulos[i].descripcion1 ?? _previewArticulos[i].descripcion2 ?? ''}',
+                            style: _previewStyle().copyWith(
+                              color: i == 0 ? cs.onSurface : cs.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ]),
               ],
             ),
           ),
@@ -977,9 +1020,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
       subtitle: 'Arrastra para reordenar',
       accentColor: cs.onSurfaceVariant,
       theme: theme,
-      child: SizedBox(
-        height: _columns.length * 52.0,
-        child: ReorderableListView(
+      child: ReorderableListView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
           onReorder: (oldIdx, newIdx) {
             setState(() {
               if (newIdx > oldIdx) newIdx--;
@@ -1013,6 +1056,72 @@ class _ConfigScreenState extends State<ConfigScreen> {
               ),
           ],
         ),
+    );
+  }
+
+  // ── Tarjeta: Acerca de ─────────────────────────────────────────────────────
+
+  Widget _buildAcercaDeCard(ThemeData theme, ColorScheme cs) {
+    return _Card(
+      icon: Symbols.info,
+      title: 'Acerca de',
+      accentColor: cs.onSurfaceVariant,
+      theme: theme,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Image.asset('assets/images/Logo_Inventario.png', height: 52,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Megas Inventario',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface)),
+                    if (_appVersion.isNotEmpty)
+                      Text('v$_appVersion',
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant)),
+                    Text('Compilado: $kBuildDate',
+                        style: TextStyle(
+                            fontSize: 11, color: cs.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+          const SizedBox(height: 14),
+          _AcercaRow(icon: Symbols.business,
+              label: 'Empresa', value: 'Megas Quality Services SL', cs: cs),
+          const SizedBox(height: 8),
+          _AcercaRow(icon: Symbols.person,
+              label: 'Desarrollador',
+              value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'Megas Inventario',
+              applicationVersion: _appVersion.isNotEmpty ? 'v$_appVersion' : '',
+              applicationLegalese:
+                  '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
+            ),
+            icon: const Icon(Symbols.gavel, size: 16),
+            label: const Text('Licencias de código abierto'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1037,20 +1146,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Logo
-                    Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(
-                        color: cs.primaryContainer,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: Icon(Symbols.inventory_2, size: 44, color: cs.primary),
-                    ),
+                    Image.asset('assets/images/Logo_Inventario.png',
+                        height: 90,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                     const SizedBox(height: 20),
                     Text('Megas Inventario',
                         style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     Text(
-                      'Conecta con tu servidor ERP Windows para comenzar',
+                      'Configuración inicial',
                       style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
@@ -1195,7 +1299,7 @@ class _Card extends StatelessWidget {
   }
 }
 
-class _Field extends StatelessWidget {
+class _Field extends StatefulWidget {
   final TextEditingController ctrl;
   final String label;
   final String? hint;
@@ -1219,22 +1323,37 @@ class _Field extends StatelessWidget {
   });
 
   @override
+  State<_Field> createState() => _FieldState();
+}
+
+class _FieldState extends State<_Field> {
+  bool _visible = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return TextField(
-      controller: ctrl,
+      controller: widget.ctrl,
       style: TextStyle(color: cs.onSurface, fontSize: 14),
-      obscureText: obscure,
-      keyboardType: keyboard,
+      obscureText: widget.obscure && !_visible,
+      keyboardType: widget.keyboard,
       autocorrect: false,
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
+        labelText: widget.label,
+        hintText: widget.hint,
         hintStyle: TextStyle(color: cs.onSurfaceVariant.withAlpha(100), fontSize: 13),
-        prefixIcon: icon != null ? Icon(icon, size: 20) : null,
-        suffixIcon: trailing,
+        prefixIcon: widget.icon != null ? Icon(widget.icon, size: 20) : null,
+        suffixIcon: widget.obscure
+            ? IconButton(
+                icon: Icon(
+                  _visible ? Symbols.visibility_off : Symbols.visibility,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _visible = !_visible),
+              )
+            : widget.trailing,
       ),
     );
   }
@@ -1462,6 +1581,36 @@ class _BtnRow extends StatelessWidget {
       const SizedBox(width: 8),
       Text(label),
     ]);
+  }
+}
+
+class _AcercaRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final ColorScheme cs;
+  const _AcercaRow({required this.icon, required this.label, required this.value, required this.cs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: cs.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(children: [
+              TextSpan(text: '$label  ',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+              TextSpan(text: value,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: cs.onSurface)),
+            ]),
+          ),
+        ),
+      ],
+    );
   }
 }
 

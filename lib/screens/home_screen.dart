@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -152,6 +154,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _sortOrder = 'ubicacion';
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  Timer? _searchDebounce;
+  String _appVersion = '';
 
 
   @override
@@ -159,17 +163,22 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _sync = SyncService(_db);
     _sortOrder = ConfigService.sortOrder;
-    // En modo legacy no hay auto-sync al arrancar (el usuario usa Recibir explícitamente)
-    if (ConfigService.isConfigured && !ConfigService.isLegacyMode) {
-      _doSync();
-    } else {
+    PackageInfo.fromPlatform().then((i) {
+      if (mounted) setState(() => _appVersion = i.version);
+    });
+    if (!ConfigService.isConfigured) {
       _loadData();
       _loadFilters();
+    } else if (ConfigService.isLegacyMode) {
+      _doRecibir();
+    } else {
+      _doSync();
     }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -186,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? IconButton(
                 icon: const Icon(Symbols.close, size: 18),
                 onPressed: () {
+                  _searchDebounce?.cancel();
                   _searchCtrl.clear();
                   setState(() => _search = '');
                   _loadData();
@@ -197,7 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       onChanged: (v) {
         setState(() => _search = v);
-        _loadData();
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 300), _loadData);
       },
     );
   }
@@ -224,10 +235,14 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
     try {
       final eid = ConfigService.empresaId;
-      final almacenes = await _db.getAlmacenes(eid);
+
+      // Almacenes y cabeceras en paralelo — no dependen entre sí
+      final almacenesFut = _db.getAlmacenes(eid);
+      final cabecerasFut = _db.getCabeceras(eid);
+      final almacenes = await almacenesFut;
+      final cabs      = await cabecerasFut;
 
       // Sesión activa: la más reciente NO sincronizada
-      final cabs = await _db.getCabeceras(eid);
       CabecerasInventarioLocalData? cab;
       if (cabs.isNotEmpty) {
         final unsync = cabs.where((c) => !c.sincronizado);
@@ -241,16 +256,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Solo cargar artículos cuando hay sesión activa (F8)
       if (cab != null) {
-        arts = await _db.getArticulos(
+        // Artículos, stock y líneas en paralelo — solo dependen de cab.id/eid
+        final artsFut   = _db.getArticulos(
           eid,
           search: _search.isEmpty ? null : _search,
           proveedorNombre: _filterProveedorNombre,
           familiaNombre: _filterFamiliaNombre,
           sortOrder: _sortOrder,
         );
-        stk = await _db.getStockTotalPorArticulo(eid);
+        final stkFut    = _db.getStockTotalPorArticulo(eid);
+        final lineasFut = _db.getLineas(cab.id);
 
-        final lineas = await _db.getLineas(cab.id);
+        arts            = await artsFut;
+        stk             = await stkFut;
+        final lineas    = await lineasFut;
+
         for (final l in lineas) {
           cnt[l.articuloId] = (cnt[l.articuloId] ?? 0) + l.stock;
           lineasMap.putIfAbsent(l.articuloId, () => l);
@@ -259,17 +279,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _articulos = arts;
-          _stocks = stk;
-          _conteos = cnt;
-          _almacenes = almacenes;
+          _articulos      = arts;
+          _stocks         = stk;
+          _conteos        = cnt;
+          _almacenes      = almacenes;
           _activeCabecera = cab;
-          _lineasMap = lineasMap;
-          _loading = false;
+          _lineasMap      = lineasMap;
+          _loading        = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showSnack('Error cargando datos: $e', error: true);
+      }
     }
   }
 
@@ -330,6 +353,27 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (mounted) {
         _showSnack('Error de sincronización: $e', error: true);
+        await _loadData();
+        await _loadFilters();
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _doRecibir() async {
+    setState(() => _syncing = true);
+    try {
+      final legacy = LegacyService(_db);
+      final result = await legacy.recibir();
+      if (mounted) {
+        _showSnack('Recibido: ${result.articulos} artículos, ${result.lotes} lotes');
+        await _loadData();
+        await _loadFilters();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Error al conectar con el servidor: $e', error: true);
         await _loadData();
         await _loadFilters();
       }
@@ -686,7 +730,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 setState(() => _selected = art);
                                               }
                                             },
-                                            onDoubleTap: () => _openLotEditor(art),
+                                            onLongPress: () => _openLotEditor(art),
                                             theme: theme,
                                             bodyStyle: rowStyle,
                                             visibleCols: visibleCols,
@@ -741,6 +785,7 @@ class _HomeScreenState extends State<HomeScreen> {
             totalContados: _lineasMap.length,
             activeCabecera: _activeCabecera,
             almacenes: _almacenes,
+            appVersion: _appVersion,
             theme: theme,
             isLandscape: isLandscape,
             onConfig: () async {
@@ -1190,7 +1235,7 @@ class _ArticuloRow extends StatefulWidget {
   final bool counted;
   final int index;
   final VoidCallback onTap;
-  final VoidCallback onDoubleTap;
+  final VoidCallback onLongPress;
   final ThemeData theme;
   // Pre-computados en el padre para evitar GoogleFonts + jsonDecode por fila
   final TextStyle bodyStyle;
@@ -1204,7 +1249,7 @@ class _ArticuloRow extends StatefulWidget {
     required this.counted,
     required this.index,
     required this.onTap,
-    required this.onDoubleTap,
+    required this.onLongPress,
     required this.theme,
     required this.bodyStyle,
     required this.visibleCols,
@@ -1243,7 +1288,7 @@ class _ArticuloRowState extends State<_ArticuloRow> {
       },
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
-      onDoubleTap: widget.onDoubleTap,
+      onLongPress: widget.onLongPress,
       child: Container(
         height: 40,
         color: _pressed ? cs.primary.withAlpha(60) : rowColor,
@@ -1251,7 +1296,7 @@ class _ArticuloRowState extends State<_ArticuloRow> {
           children: [
             // Barra lateral de selección — muy visible
             AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
+              duration: const Duration(milliseconds: 50),
               width: widget.selected ? 4 : 0,
               height: 40,
               color: cs.primary,
@@ -1287,6 +1332,7 @@ class _BottomInfoPanel extends StatelessWidget {
   final int totalContados;
   final CabecerasInventarioLocalData? activeCabecera;
   final List<AlmacenesLocalData> almacenes;
+  final String appVersion;
   final ThemeData theme;
   final bool isLandscape;
   final VoidCallback? onConfig;
@@ -1299,6 +1345,7 @@ class _BottomInfoPanel extends StatelessWidget {
     required this.totalContados,
     required this.activeCabecera,
     required this.almacenes,
+    required this.appVersion,
     required this.theme,
     this.isLandscape = false,
     this.onConfig,
@@ -1372,7 +1419,8 @@ class _BottomInfoPanel extends StatelessWidget {
                       ),
                   ],
                 ),
-                Text('v1.2.9',
+                if (appVersion.isNotEmpty)
+                  Text('v$appVersion',
                     style: TextStyle(fontSize: 9, color: cs.onSurfaceVariant.withAlpha(100))),
               ],
             ),
