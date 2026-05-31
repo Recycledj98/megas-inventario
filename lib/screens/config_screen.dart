@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -70,6 +71,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
   List<ColConfig> _columns   = [];
 
   List<ArticulosLocalData> _previewArticulos = [];
+  String _appVersion = '';
   CabecerasInventarioLocalData? _sesionPendiente;
   int    _lineasPendientes    = 0;
   bool   _syncing             = false;
@@ -122,6 +124,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
     _loadSesionPendiente();
     _loadPreviewArticulos();
+    PackageInfo.fromPlatform().then((i) {
+      if (mounted) setState(() => _appVersion = i.version);
+    });
 
     if (!_legacyMode && ConfigService.serverUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _probar());
@@ -527,6 +532,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
       _buildVisualizacionCard(theme, cs),
       const SizedBox(height: 16),
       _buildColumnasCard(theme, cs),
+      const SizedBox(height: 16),
+      _buildAcercaDeCard(theme, cs),
     ];
   }
 
@@ -1051,6 +1058,70 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
+  // ── Tarjeta: Acerca de ─────────────────────────────────────────────────────
+
+  Widget _buildAcercaDeCard(ThemeData theme, ColorScheme cs) {
+    return _Card(
+      icon: Symbols.info,
+      title: 'Acerca de',
+      accentColor: cs.onSurfaceVariant,
+      theme: theme,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Image.asset('assets/images/negro.png', height: 40,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Megas Inventario',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface)),
+                    if (_appVersion.isNotEmpty)
+                      Text('v$_appVersion',
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+          const SizedBox(height: 14),
+          _AcercaRow(icon: Symbols.business,
+              label: 'Empresa', value: 'Megas Quality Services SL', cs: cs),
+          const SizedBox(height: 8),
+          _AcercaRow(icon: Symbols.person,
+              label: 'Desarrollador',
+              value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'Megas Inventario',
+              applicationVersion: _appVersion.isNotEmpty ? 'v$_appVersion' : '',
+              applicationLegalese:
+                  '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
+            ),
+            icon: const Icon(Symbols.gavel, size: 16),
+            label: const Text('Licencias de código abierto'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Wizard de configuración inicial ────────────────────────────────────────
 
   Widget _buildWizard(ThemeData theme, ColorScheme cs) {
@@ -1511,6 +1582,36 @@ class _BtnRow extends StatelessWidget {
       const SizedBox(width: 8),
       Text(label),
     ]);
+  }
+}
+
+class _AcercaRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final ColorScheme cs;
+  const _AcercaRow({required this.icon, required this.label, required this.value, required this.cs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: cs.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(children: [
+              TextSpan(text: '$label  ',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+              TextSpan(text: value,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: cs.onSurface)),
+            ]),
+          ),
+        ),
+      ],
+    );
   }
 }
 

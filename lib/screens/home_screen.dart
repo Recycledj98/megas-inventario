@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -154,6 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   Timer? _searchDebounce;
+  String _appVersion = '';
 
 
   @override
@@ -161,6 +163,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _sync = SyncService(_db);
     _sortOrder = ConfigService.sortOrder;
+    PackageInfo.fromPlatform().then((i) {
+      if (mounted) setState(() => _appVersion = i.version);
+    });
     if (!ConfigService.isConfigured) {
       _loadData();
       _loadFilters();
@@ -780,6 +785,7 @@ class _HomeScreenState extends State<HomeScreen> {
             totalContados: _lineasMap.length,
             activeCabecera: _activeCabecera,
             almacenes: _almacenes,
+            appVersion: _appVersion,
             theme: theme,
             isLandscape: isLandscape,
             onConfig: () async {
@@ -1326,6 +1332,7 @@ class _BottomInfoPanel extends StatelessWidget {
   final int totalContados;
   final CabecerasInventarioLocalData? activeCabecera;
   final List<AlmacenesLocalData> almacenes;
+  final String appVersion;
   final ThemeData theme;
   final bool isLandscape;
   final VoidCallback? onConfig;
@@ -1338,6 +1345,7 @@ class _BottomInfoPanel extends StatelessWidget {
     required this.totalContados,
     required this.activeCabecera,
     required this.almacenes,
+    required this.appVersion,
     required this.theme,
     this.isLandscape = false,
     this.onConfig,
@@ -1411,7 +1419,8 @@ class _BottomInfoPanel extends StatelessWidget {
                       ),
                   ],
                 ),
-                Text('v1.2.9',
+                if (appVersion.isNotEmpty)
+                  Text('v$appVersion',
                     style: TextStyle(fontSize: 9, color: cs.onSurfaceVariant.withAlpha(100))),
               ],
             ),

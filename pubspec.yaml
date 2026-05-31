@@ -40,6 +40,9 @@ dependencies:
   # Sonidos de feedback
   audioplayers: ^6.0.0
 
+  # Versión de la app en tiempo de ejecución
+  package_info_plus: ^8.1.2
+
   # UI
   flutter_speed_dial: ^7.0.0
   cupertino_icons: ^1.0.8
