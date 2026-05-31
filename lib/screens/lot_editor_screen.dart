@@ -522,8 +522,6 @@ class _DialogLineaState extends State<_DialogLinea> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _qtyCtrl;
   late final TextEditingController _loteCtrl;
-  final _loteFocus = FocusNode();
-  bool _loteNumerico = true;
   DateTime? _fechaCaducidad;
 
   @override
@@ -548,14 +546,7 @@ class _DialogLineaState extends State<_DialogLinea> {
   void dispose() {
     _qtyCtrl.dispose();
     _loteCtrl.dispose();
-    _loteFocus.dispose();
     super.dispose();
-  }
-
-  void _toggleLoteKeyboard() {
-    setState(() => _loteNumerico = !_loteNumerico);
-    _loteFocus.unfocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loteFocus.requestFocus());
   }
 
   Future<void> _pickFecha() async {
@@ -687,40 +678,18 @@ class _DialogLineaState extends State<_DialogLinea> {
                 // Lote
                 TextField(
                   controller: _loteCtrl,
-                  focusNode: _loteFocus,
                   style: TextStyle(color: cs.onSurface),
-                  keyboardType: _loteNumerico
-                      ? const TextInputType.numberWithOptions(
-                          signed: false, decimal: false)
-                      : TextInputType.text,
+                  keyboardType: TextInputType.text,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
                     labelText: 'Código lote (opcional)',
                     prefixIcon: const Icon(Symbols.tag),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GestureDetector(
-                          onTap: _toggleLoteKeyboard,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Text(
-                              _loteNumerico ? 'ABC' : '123',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: cs.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (_loteCtrl.text.isNotEmpty)
-                          IconButton(
+                    suffixIcon: _loteCtrl.text.isNotEmpty
+                        ? IconButton(
                             icon: const Icon(Symbols.close, size: 18),
                             onPressed: () => setState(() => _loteCtrl.clear()),
-                          ),
-                      ],
-                    ),
+                          )
+                        : null,
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
