@@ -12,6 +12,7 @@ import '../database/tables.dart';
 import '../services/config_service.dart';
 import '../services/sync_service.dart';
 import '../services/legacy_service.dart';
+import '../services/update_service.dart';
 import '../widgets/app_toast.dart';
 import 'lot_editor_screen.dart';
 
@@ -166,6 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
     PackageInfo.fromPlatform().then((i) {
       if (mounted) setState(() => _appVersion = i.version);
     });
+    // Comprueba actualización 5s después del arranque para no interferir con la carga
+    Future.delayed(const Duration(seconds: 5), _checkForUpdate);
     if (!ConfigService.isConfigured) {
       _loadData();
       _loadFilters();
@@ -359,6 +362,17 @@ class _HomeScreenState extends State<HomeScreen> {
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (!mounted) return;
+    final update = await UpdateService.checkForUpdate();
+    if (update == null || !mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UpdateDialog(update: update),
+    );
   }
 
   Future<void> _doRecibir() async {
@@ -1484,6 +1498,89 @@ class _BottomInfoPanel extends StatelessWidget {
       ), // Row
         ],
       ), // Stack
+    );
+  }
+}
+
+// ── Diálogo de actualización ──────────────────────────────────────────────────
+
+class _UpdateDialog extends StatefulWidget {
+  final UpdateInfo update;
+  const _UpdateDialog({required this.update});
+
+  @override
+  State<_UpdateDialog> createState() => _UpdateDialogState();
+}
+
+class _UpdateDialogState extends State<_UpdateDialog> {
+  bool _descargando = false;
+  bool _error = false;
+  double _progress = 0;
+
+  Future<void> _descargar() async {
+    setState(() { _descargando = true; _error = false; });
+    try {
+      await UpdateService.downloadAndInstall(
+        widget.update.url,
+        onProgress: (p) { if (mounted) setState(() => _progress = p); },
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() { _descargando = false; _error = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final pct = (_progress * 100).toInt();
+
+    return AlertDialog(
+      title: Row(children: [
+        Icon(Icons.system_update_rounded, color: cs.primary, size: 22),
+        const SizedBox(width: 10),
+        const Text('Nueva versión disponible'),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Versión ${widget.update.version}',
+              style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary)),
+          if (widget.update.notas.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(widget.update.notas,
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+          ],
+          if (_descargando) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+            const SizedBox(height: 6),
+            Text(
+              _progress > 0 ? 'Descargando… $pct%' : 'Conectando…',
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            ),
+          ],
+          if (_error) ...[
+            const SizedBox(height: 10),
+            Text('Error al descargar. Comprueba la conexión.',
+                style: TextStyle(fontSize: 12, color: cs.error)),
+          ],
+        ],
+      ),
+      actions: _descargando
+          ? null
+          : [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Ahora no'),
+              ),
+              FilledButton.icon(
+                onPressed: _descargar,
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Actualizar'),
+              ),
+            ],
     );
   }
 }
