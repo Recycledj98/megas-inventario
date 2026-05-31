@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -27,15 +29,30 @@ class UpdateService {
   static Future<UpdateInfo?> checkForUpdate() async {
     try {
       final info = await PackageInfo.fromPlatform();
-      final resp = await _dio.get(_versionUrl);
-      final data = resp.data as Map<String, dynamic>;
+
+      // GitHub devuelve Content-Type: octet-stream en los assets de releases.
+      // Forzar ResponseType.plain para obtener el String y parsear manualmente.
+      final resp = await _dio.get(
+        _versionUrl,
+        options: Options(responseType: ResponseType.plain),
+      );
+
+      final Map<String, dynamic> data = resp.data is String
+          ? jsonDecode(resp.data as String) as Map<String, dynamic>
+          : resp.data as Map<String, dynamic>;
+
       final latest = (data['version'] as String? ?? '').trim();
       final url    = (data['url']     as String? ?? '').trim();
       final notas  = (data['notas']   as String? ?? '').trim();
+
+      debugPrint('UpdateService: instalada=${info.version} disponible=$latest');
+
       if (latest.isNotEmpty && url.isNotEmpty && _isNewer(latest, info.version)) {
         return UpdateInfo(version: latest, url: url, notas: notas);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('UpdateService error: $e');
+    }
     return null;
   }
 
