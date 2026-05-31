@@ -147,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _familias = [];
   String? _filterProveedorNombre;
   String? _filterFamiliaNombre;
+  String? _filterConteo; // null = todos, 'contados', 'sin_contar'
 
   ArticulosLocalData? _selected;
   bool _loading = true;
@@ -488,23 +489,47 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _doSalir() async {
+    final tieneLineas = _lineasMap.isNotEmpty;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Salir'),
-        content: const Text('¿Cerrar la aplicación?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Salir'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: Row(children: [
+            if (tieneLineas) ...[
+              Icon(Icons.warning_amber_rounded, color: cs.error, size: 22),
+              const SizedBox(width: 8),
+            ],
+            const Text('Salir'),
+          ]),
+          content: tieneLineas
+              ? RichText(
+                  text: TextSpan(
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                    children: [
+                      TextSpan(
+                        text: 'Tienes ${_lineasMap.length} artículo(s) contados sin enviar.\n\n',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: cs.error),
+                      ),
+                      const TextSpan(
+                        text: 'Los datos están guardados y no se perderán. Puedes continuar más tarde.',
+                      ),
+                    ],
+                  ),
+                )
+              : const Text('¿Cerrar la aplicación?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: cs.error),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Salir'),
+            ),
+          ],
+        );
+      },
     );
     if (ok == true) SystemNavigator.pop();
   }
@@ -526,27 +551,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _scrollUp() {
-    if (_articulos.isEmpty) return;
+    final lista = _articulosMostrados;
+    if (lista.isEmpty) return;
     final idx = _selected == null
         ? 0
-        : _articulos
-            .indexWhere((a) => a.articuloId == _selected!.articuloId);
-    final newIdx = (idx - 1).clamp(0, _articulos.length - 1);
+        : lista.indexWhere((a) => a.articuloId == _selected!.articuloId);
+    final newIdx = (idx - 1).clamp(0, lista.length - 1);
     if (newIdx == idx && _selected != null) return;
-    setState(() => _selected = _articulos[newIdx]);
+    setState(() => _selected = lista[newIdx]);
     _scrollToSelected();
   }
 
   void _scrollDown() {
-    if (_articulos.isEmpty) return;
+    final lista = _articulosMostrados;
+    if (lista.isEmpty) return;
     final idx = _selected == null
         ? -1
-        : _articulos
-            .indexWhere((a) => a.articuloId == _selected!.articuloId);
-    final newIdx = (idx + 1).clamp(0, _articulos.length - 1);
+        : lista.indexWhere((a) => a.articuloId == _selected!.articuloId);
+    final newIdx = (idx + 1).clamp(0, lista.length - 1);
     if (newIdx == idx && _selected != null) return;
-    setState(() => _selected = _articulos[newIdx]);
+    setState(() => _selected = lista[newIdx]);
     _scrollToSelected();
+  }
+
+  List<ArticulosLocalData> get _articulosMostrados {
+    if (_filterConteo == null) return _articulos;
+    if (_filterConteo == 'contados') {
+      return _articulos.where((a) => _lineasMap.containsKey(a.articuloId)).toList();
+    }
+    return _articulos.where((a) => !_lineasMap.containsKey(a.articuloId)).toList();
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -677,6 +710,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           padding: const EdgeInsets.fromLTRB(10, 6, 10, 2),
                           child: _buildSearchField(cs),
                         ),
+                      // Filtro contados / sin contar
+                      if (_activeCabecera != null)
+                        _ConteoFilterRow(
+                          total: _articulos.length,
+                          contados: _lineasMap.length,
+                          filtro: _filterConteo,
+                          onChanged: (v) => setState(() => _filterConteo = v),
+                        ),
                       // Barra de filtros (F7)
                       if (hasFilters && _activeCabecera != null)
                         _FilterBar(
@@ -715,7 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   theme: theme,
                                   onCrear: _ensureCabecera,
                                 )
-                              : _articulos.isEmpty && !_loading
+                              : _articulosMostrados.isEmpty && !_loading
                                   ? _EmptyState(
                                       key: const ValueKey('empty'),
                                       theme: theme,
@@ -724,13 +765,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                       controller: _scrollCtrl,
                                       thumbVisibility: true,
                                       child: ListView.builder(
-                                      key: const ValueKey('list'),
+                                      key: ValueKey('list-$_filterConteo'),
                                       controller: _scrollCtrl,
                                       padding: EdgeInsets.zero,
-                                      itemCount: _articulos.length,
+                                      itemCount: _articulosMostrados.length,
                                       itemExtent: 40,
                                       itemBuilder: (ctx, i) {
-                                        final art = _articulos[i];
+                                        final art = _articulosMostrados[i];
                                         return RepaintBoundary(
                                           child: _ArticuloRow(
                                             articulo: art,
@@ -1498,6 +1539,80 @@ class _BottomInfoPanel extends StatelessWidget {
       ), // Row
         ],
       ), // Stack
+    );
+  }
+}
+
+// ── Filtro contados / sin contar ──────────────────────────────────────────────
+
+class _ConteoFilterRow extends StatelessWidget {
+  final int total;
+  final int contados;
+  final String? filtro;
+  final ValueChanged<String?> onChanged;
+
+  const _ConteoFilterRow({
+    required this.total,
+    required this.contados,
+    required this.filtro,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sinContar = total - contados;
+
+    return Container(
+      height: 34,
+      color: cs.surfaceContainerLowest,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          _chip(context, null,          'Todos',      total,    cs.primary),
+          const SizedBox(width: 6),
+          _chip(context, 'sin_contar',  'Sin contar', sinContar,
+              sinContar > 0 ? cs.error : cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          _chip(context, 'contados',    'Contados',   contados,
+              Colors.green.shade600),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, String? value, String label, int count, Color color) {
+    final selected = filtro == value;
+    return GestureDetector(
+      onTap: () => onChanged(selected ? null : value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected ? color.withAlpha(22) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? color : Theme.of(context).colorScheme.outlineVariant,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                    color: selected ? color : Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(width: 4),
+            Text('$count',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? color : Theme.of(context).colorScheme.onSurfaceVariant)),
+          ],
+        ),
+      ),
     );
   }
 }
