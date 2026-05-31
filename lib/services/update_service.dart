@@ -56,6 +56,33 @@ class UpdateService {
     return null;
   }
 
+  /// Como checkForUpdate pero devuelve el error como String en lugar de null.
+  /// Útil para el botón "Buscar actualizaciones" en Ajustes.
+  static Future<({UpdateInfo? update, String? error, String? instalada, String? disponible})>
+      checkForUpdateVerbose() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final resp = await _dio.get(
+        _versionUrl,
+        options: Options(responseType: ResponseType.plain),
+      );
+      final Map<String, dynamic> data = resp.data is String
+          ? jsonDecode(resp.data as String) as Map<String, dynamic>
+          : resp.data as Map<String, dynamic>;
+      final latest = (data['version'] as String? ?? '').trim();
+      final url    = (data['url']     as String? ?? '').trim();
+      final notas  = (data['notas']   as String? ?? '').trim();
+      if (latest.isNotEmpty && url.isNotEmpty && _isNewer(latest, info.version)) {
+        return (update: UpdateInfo(version: latest, url: url, notas: notas),
+                error: null, instalada: info.version, disponible: latest);
+      }
+      return (update: null, error: null,
+              instalada: info.version, disponible: latest);
+    } catch (e) {
+      return (update: null, error: e.toString(), instalada: null, disponible: null);
+    }
+  }
+
   static bool _isNewer(String latest, String current) {
     List<int> parse(String v) =>
         v.split('.').map((s) => int.tryParse(s) ?? 0).toList();

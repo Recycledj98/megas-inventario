@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../build_info.dart';
+import '../services/update_service.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -73,6 +74,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   List<ArticulosLocalData> _previewArticulos = [];
   String _appVersion = '';
+  bool   _buscandoUpdate = false;
+  String? _updateMsg;
   CabecerasInventarioLocalData? _sesionPendiente;
   int    _lineasPendientes    = 0;
   bool   _syncing             = false;
@@ -1059,6 +1062,33 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
+  Future<void> _buscarActualizacion() async {
+    setState(() { _buscandoUpdate = true; _updateMsg = null; });
+    final result = await UpdateService.checkForUpdateVerbose();
+    if (!mounted) return;
+    if (result.error != null) {
+      setState(() {
+        _updateMsg = '❌ Error: ${result.error}';
+        _buscandoUpdate = false;
+      });
+      return;
+    }
+    if (result.update != null) {
+      setState(() { _buscandoUpdate = false; _updateMsg = null; });
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _UpdateDialogConfig(update: result.update!),
+      );
+    } else {
+      setState(() {
+        _updateMsg = '✅ Ya tienes la última versión '
+            '(instalada: ${result.instalada} · disponible: ${result.disponible})';
+        _buscandoUpdate = false;
+      });
+    }
+  }
+
   // ── Tarjeta: Acerca de ─────────────────────────────────────────────────────
 
   Widget _buildAcercaDeCard(ThemeData theme, ColorScheme cs) {
@@ -1106,20 +1136,58 @@ class _ConfigScreenState extends State<ConfigScreen> {
               label: 'Desarrollador',
               value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () => showLicensePage(
-              context: context,
-              applicationName: 'Megas Inventario',
-              applicationVersion: _appVersion.isNotEmpty ? 'v$_appVersion' : '',
-              applicationLegalese:
-                  '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
+
+          // Buscar actualizaciones
+          if (_updateMsg != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _updateMsg!.startsWith('❌')
+                    ? Theme.of(context).colorScheme.errorContainer.withAlpha(80)
+                    : Theme.of(context).colorScheme.primaryContainer.withAlpha(80),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_updateMsg!,
+                  style: TextStyle(fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface)),
             ),
-            icon: const Icon(Symbols.gavel, size: 16),
-            label: const Text('Licencias de código abierto'),
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              textStyle: const TextStyle(fontSize: 12),
-            ),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: _buscandoUpdate ? null : _buscarActualizacion,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                  child: _buscandoUpdate
+                      ? const SizedBox(width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Symbols.system_update, size: 16),
+                          SizedBox(width: 6),
+                          Text('Buscar actualizaciones'),
+                        ]),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () => showLicensePage(
+                  context: context,
+                  applicationName: 'Megas Inventario',
+                  applicationVersion: _appVersion.isNotEmpty ? 'v$_appVersion' : '',
+                  applicationLegalese:
+                      '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
+                ),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+                child: const Icon(Symbols.gavel, size: 16),
+              ),
+            ],
           ),
         ],
       ),
@@ -1586,6 +1654,82 @@ class _BtnRow extends StatelessWidget {
       const SizedBox(width: 8),
       Text(label),
     ]);
+  }
+}
+
+class _UpdateDialogConfig extends StatefulWidget {
+  final UpdateInfo update;
+  const _UpdateDialogConfig({required this.update});
+  @override
+  State<_UpdateDialogConfig> createState() => _UpdateDialogConfigState();
+}
+
+class _UpdateDialogConfigState extends State<_UpdateDialogConfig> {
+  bool _descargando = false;
+  bool _error = false;
+  double _progress = 0;
+
+  Future<void> _descargar() async {
+    setState(() { _descargando = true; _error = false; });
+    try {
+      await UpdateService.downloadAndInstall(
+        widget.update.url,
+        onProgress: (p) { if (mounted) setState(() => _progress = p); },
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() { _descargando = false; _error = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Row(children: [
+        Icon(Icons.system_update_rounded, color: cs.primary, size: 22),
+        const SizedBox(width: 10),
+        const Text('Nueva versión disponible'),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Versión ${widget.update.version}',
+              style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary)),
+          if (widget.update.notas.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(widget.update.notas,
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+          ],
+          if (_descargando) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+            const SizedBox(height: 6),
+            Text(_progress > 0
+                ? 'Descargando… ${(_progress * 100).toInt()}%'
+                : 'Conectando…',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+          ],
+          if (_error) ...[
+            const SizedBox(height: 10),
+            Text('Error al descargar. Comprueba la conexión.',
+                style: TextStyle(fontSize: 12, color: cs.error)),
+          ],
+        ],
+      ),
+      actions: _descargando ? null : [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Ahora no'),
+        ),
+        FilledButton.icon(
+          onPressed: _descargar,
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: const Text('Actualizar'),
+        ),
+      ],
+    );
   }
 }
 
