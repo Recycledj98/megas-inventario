@@ -161,12 +161,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _sync = SyncService(_db);
     _sortOrder = ConfigService.sortOrder;
-    // En modo legacy no hay auto-sync al arrancar (el usuario usa Recibir explícitamente)
-    if (ConfigService.isConfigured && !ConfigService.isLegacyMode) {
-      _doSync();
-    } else {
+    if (!ConfigService.isConfigured) {
       _loadData();
       _loadFilters();
+    } else if (ConfigService.isLegacyMode) {
+      _doRecibir();
+    } else {
+      _doSync();
     }
   }
 
@@ -347,6 +348,27 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (mounted) {
         _showSnack('Error de sincronización: $e', error: true);
+        await _loadData();
+        await _loadFilters();
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _doRecibir() async {
+    setState(() => _syncing = true);
+    try {
+      final legacy = LegacyService(_db);
+      final result = await legacy.recibir();
+      if (mounted) {
+        _showSnack('Recibido: ${result.articulos} artículos, ${result.lotes} lotes');
+        await _loadData();
+        await _loadFilters();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Error al conectar con el servidor: $e', error: true);
         await _loadData();
         await _loadFilters();
       }
