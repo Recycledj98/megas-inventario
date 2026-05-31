@@ -20,6 +20,9 @@ workflows:
           pod install
           cd ..
 
+      - name: Generate Drift code (*.g.dart)
+        script: flutter pub run build_runner build --delete-conflicting-outputs
+
       - name: Build iOS Simulator (no requiere firma)
         script: flutter build ios --simulator --debug
 
