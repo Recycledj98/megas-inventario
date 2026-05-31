@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Auto-update, splash renovado, ajustes mejorados, tap instantáneo, sonidos suaves"
+  "notas": "Filtro contados/sin contar, confirmación al salir con sesión activa, auto-update mejorado"
 }
