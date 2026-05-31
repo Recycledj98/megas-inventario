@@ -79,7 +79,7 @@ class FeedbackService {
       pos = nxt;
 
       final fade = i > total - fadeLen ? (total - i) / fadeLen : 1.0;
-      bd.setInt16(44 + i * 2, (cur * 12000 * fade).round().clamp(-32768, 32767), Endian.little);
+      bd.setInt16(44 + i * 2, (cur * 4500 * fade).round().clamp(-32768, 32767), Endian.little);
     }
     return out;
   }
@@ -110,13 +110,13 @@ class FeedbackService {
         final nxt = (pos + 1) % period;
         line[pos] = (cur + line[nxt]) * 0.5 * decay;
         pos = nxt;
-        if (start + i < total) mix[start + i] += cur * 9000.0;
+        if (start + i < total) mix[start + i] += cur * 3500.0;
       }
     }
 
     // Normalizar para evitar clipping
     final peak = mix.fold(0.0, (m, v) => v.abs() > m ? v.abs() : m);
-    final norm = peak > 11000.0 ? 11000.0 / peak : 1.0;
+    final norm = peak > 4000.0 ? 4000.0 / peak : 1.0;
 
     final out = Uint8List(44 + total * 2);
     final bd  = ByteData.view(out.buffer);

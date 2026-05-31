@@ -69,9 +69,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
   bool           _fontBold   = false;
   List<ColConfig> _columns   = [];
 
+  List<ArticulosLocalData> _previewArticulos = [];
   CabecerasInventarioLocalData? _sesionPendiente;
   int    _lineasPendientes    = 0;
   bool   _syncing             = false;
+  bool   _guardado            = false;
   String? _mensajeInventario;
   bool   _mensajeError        = false;
 
@@ -119,6 +121,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
     }
 
     _loadSesionPendiente();
+    _loadPreviewArticulos();
 
     if (!_legacyMode && ConfigService.serverUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _probar());
@@ -138,6 +141,15 @@ class _ConfigScreenState extends State<ConfigScreen> {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  Future<void> _loadPreviewArticulos() async {
+    if (!ConfigService.isConfigured) return;
+    final eid = ConfigService.isLegacyMode ? 0 : ConfigService.empresaId;
+    final arts = await _db.getArticulos(eid, sortOrder: 'ubicacion');
+    if (mounted && arts.isNotEmpty) {
+      setState(() => _previewArticulos = arts.take(2).toList());
+    }
+  }
 
   Future<void> _loadSesionPendiente() async {
     final eid = _legacyMode ? 0 : ConfigService.empresaId;
@@ -343,8 +355,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (widget.isInitialSetup) {
       context.go('/');
     } else {
-      _showMsg('Configuración guardada');
-      context.pop();
+      setState(() => _guardado = true);
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (mounted) context.pop();
     }
   }
 
@@ -370,8 +383,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (widget.isInitialSetup) {
       context.go('/');
     } else {
-      AppToast.show(context, 'Configuración guardada');
-      context.pop();
+      setState(() => _guardado = true);
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (mounted) context.pop();
     }
   }
 
@@ -404,10 +418,22 @@ class _ConfigScreenState extends State<ConfigScreen> {
           if (_canSave)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: FilledButton.icon(
-                onPressed: _guardar,
-                icon: const Icon(Symbols.save, size: 18),
-                label: const Text('Guardar'),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: _guardado
+                    ? FilledButton.icon(
+                        key: const ValueKey('saved'),
+                        onPressed: null,
+                        icon: const Icon(Symbols.check, size: 18),
+                        label: const Text('Guardado'),
+                        style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600),
+                      )
+                    : FilledButton.icon(
+                        key: const ValueKey('save'),
+                        onPressed: _guardar,
+                        icon: const Icon(Symbols.save, size: 18),
+                        label: const Text('Guardar'),
+                      ),
               ),
             ),
           // La "ruleta" — acceso oculto al modo API
@@ -501,13 +527,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
       _buildVisualizacionCard(theme, cs),
       const SizedBox(height: 16),
       _buildColumnasCard(theme, cs),
-      const SizedBox(height: 24),
-      FilledButton.icon(
-        onPressed: _canSave ? _guardar : null,
-        icon: const Icon(Symbols.check, size: 18),
-        label: const Text('Guardar configuración'),
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-      ),
     ];
   }
 
@@ -953,13 +972,29 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 Text('Previsualización',
                     style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant, letterSpacing: 0.5)),
                 const SizedBox(height: 6),
-                Text('REF-001234   Tornillo M6 inox 304   12,00 uds',
-                    style: _previewStyle().copyWith(color: cs.onSurface),
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text('ART005   Moritz Botella 33cl Caja 24   36,00 uds',
-                    style: _previewStyle().copyWith(color: cs.onSurfaceVariant),
-                    overflow: TextOverflow.ellipsis),
+                ...(_previewArticulos.isEmpty
+                    ? [
+                        Text('REF-001234   Tornillo M6 inox 304',
+                            style: _previewStyle().copyWith(color: cs.onSurface),
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text('ART005   Moritz Botella 33cl x24',
+                            style: _previewStyle().copyWith(color: cs.onSurfaceVariant),
+                            overflow: TextOverflow.ellipsis),
+                      ]
+                    : [
+                        for (int i = 0; i < _previewArticulos.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 2),
+                          Text(
+                            '${_previewArticulos[i].identificacion}   '
+                            '${_previewArticulos[i].descripcion1 ?? _previewArticulos[i].descripcion2 ?? ''}',
+                            style: _previewStyle().copyWith(
+                              color: i == 0 ? cs.onSurface : cs.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ]),
               ],
             ),
           ),
@@ -977,9 +1012,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
       subtitle: 'Arrastra para reordenar',
       accentColor: cs.onSurfaceVariant,
       theme: theme,
-      child: SizedBox(
-        height: _columns.length * 52.0,
-        child: ReorderableListView(
+      child: ReorderableListView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
           onReorder: (oldIdx, newIdx) {
             setState(() {
               if (newIdx > oldIdx) newIdx--;
@@ -1013,7 +1048,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
               ),
           ],
         ),
-      ),
     );
   }
 
@@ -1195,7 +1229,7 @@ class _Card extends StatelessWidget {
   }
 }
 
-class _Field extends StatelessWidget {
+class _Field extends StatefulWidget {
   final TextEditingController ctrl;
   final String label;
   final String? hint;
@@ -1219,22 +1253,37 @@ class _Field extends StatelessWidget {
   });
 
   @override
+  State<_Field> createState() => _FieldState();
+}
+
+class _FieldState extends State<_Field> {
+  bool _visible = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return TextField(
-      controller: ctrl,
+      controller: widget.ctrl,
       style: TextStyle(color: cs.onSurface, fontSize: 14),
-      obscureText: obscure,
-      keyboardType: keyboard,
+      obscureText: widget.obscure && !_visible,
+      keyboardType: widget.keyboard,
       autocorrect: false,
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
+        labelText: widget.label,
+        hintText: widget.hint,
         hintStyle: TextStyle(color: cs.onSurfaceVariant.withAlpha(100), fontSize: 13),
-        prefixIcon: icon != null ? Icon(icon, size: 20) : null,
-        suffixIcon: trailing,
+        prefixIcon: widget.icon != null ? Icon(widget.icon, size: 20) : null,
+        suffixIcon: widget.obscure
+            ? IconButton(
+                icon: Icon(
+                  _visible ? Symbols.visibility_off : Symbols.visibility,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _visible = !_visible),
+              )
+            : widget.trailing,
       ),
     );
   }
