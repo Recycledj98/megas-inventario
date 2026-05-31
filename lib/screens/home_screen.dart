@@ -725,7 +725,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 setState(() => _selected = art);
                                               }
                                             },
-                                            onDoubleTap: () => _openLotEditor(art),
+                                            onLongPress: () => _openLotEditor(art),
                                             theme: theme,
                                             bodyStyle: rowStyle,
                                             visibleCols: visibleCols,
@@ -1229,7 +1229,7 @@ class _ArticuloRow extends StatefulWidget {
   final bool counted;
   final int index;
   final VoidCallback onTap;
-  final VoidCallback onDoubleTap;
+  final VoidCallback onLongPress;
   final ThemeData theme;
   // Pre-computados en el padre para evitar GoogleFonts + jsonDecode por fila
   final TextStyle bodyStyle;
@@ -1243,7 +1243,7 @@ class _ArticuloRow extends StatefulWidget {
     required this.counted,
     required this.index,
     required this.onTap,
-    required this.onDoubleTap,
+    required this.onLongPress,
     required this.theme,
     required this.bodyStyle,
     required this.visibleCols,
@@ -1282,7 +1282,7 @@ class _ArticuloRowState extends State<_ArticuloRow> {
       },
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
-      onDoubleTap: widget.onDoubleTap,
+      onLongPress: widget.onLongPress,
       child: Container(
         height: 40,
         color: _pressed ? cs.primary.withAlpha(60) : rowColor,
@@ -1290,7 +1290,7 @@ class _ArticuloRowState extends State<_ArticuloRow> {
           children: [
             // Barra lateral de selección — muy visible
             AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
+              duration: const Duration(milliseconds: 50),
               width: widget.selected ? 4 : 0,
               height: 40,
               color: cs.primary,
