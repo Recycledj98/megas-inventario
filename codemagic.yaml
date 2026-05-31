@@ -20,18 +20,8 @@ workflows:
           pod install
           cd ..
 
-      - name: Build iOS sin firma
-        script: |
-          xcodebuild \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE="" \
-            build
+      - name: Build iOS Simulator (no requiere firma)
+        script: flutter build ios --simulator --debug
 
     artifacts:
-      - build/ios/iphoneos/Runner.app
+      - build/ios/iphonesimulator/Runner.app
