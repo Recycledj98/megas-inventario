@@ -1,15 +1,20 @@
 workflows:
   ios-release:
-    name: iOS Release
+    name: iOS Release (App Store)
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
       flutter: 3.44.0
       xcode: latest
       cocoapods: default
+      # Codemagic gestiona certificados y provisioning profiles automáticamente.
+      # Requiere: cuenta Apple Developer conectada en Codemagic → Teams → Integrations.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.megasweb.megasInventario
     scripts:
-      # Flutter 3.22+ uses Swift Package Manager by default, which breaks
-      # project.pbxproj during `flutter pub get` on CI. Force CocoaPods instead.
+      # Flutter 3.22+ activa Swift Package Manager por defecto, lo que rompe
+      # project.pbxproj en CI. Forzamos CocoaPods.
       - name: Disable Swift Package Manager
         script: flutter config --no-enable-swift-package-manager
 
@@ -22,12 +27,50 @@ workflows:
           pod install
           cd ..
 
-      - name: Build iOS (sin firma — añade code signing para App Store)
-        script: flutter build ios --release --no-codesign
+      - name: Build IPA
+        script: flutter build ipa --release
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  ios-debug:
+    name: iOS Debug (sin firma — solo verifica que compila)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: 3.44.0
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Disable Swift Package Manager
+        script: flutter config --no-enable-swift-package-manager
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS sin firma
+        script: |
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            build
 
     artifacts:
       - build/ios/iphoneos/Runner.app
-      - flutter_drive.log
-
-  # Para distribuir en TestFlight / App Store añade aquí tu workflow con
-  # code signing: https://docs.codemagic.io/yaml-code-signing/signing-ios/
