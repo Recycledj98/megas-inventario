@@ -1147,15 +1147,20 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   children: [
                     // Logo
                     Image.asset('assets/images/Logo_Inventario.png',
-                        height: 90,
+                        height: 100,
                         errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                    const SizedBox(height: 20),
-                    Text('Megas Inventario',
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
                     Text(
                       'Configuración inicial',
                       style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _appVersion.isNotEmpty
+                          ? 'v$_appVersion · $kBuildDate'
+                          : kBuildDate,
+                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withAlpha(140)),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 36),
