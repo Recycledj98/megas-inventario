@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../build_info.dart';
+import '../services/update_service.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -224,6 +225,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (lineas.isEmpty) { _showMsg('La sesión no tiene líneas contadas', error: true); return; }
 
     final ok = await showDialog<bool>(
+      barrierDismissible: false,
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar envío'),
@@ -259,6 +261,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   Future<void> _mostrarFiltrosYRecibir() async {
     final filtros = await showDialog<_RecibirFiltros>(
+      barrierDismissible: false,
       context: context,
       builder: (_) => _DialogFiltrosRecibir(
         db: _db,
@@ -533,8 +536,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
       _buildVisualizacionCard(theme, cs),
       const SizedBox(height: 16),
       _buildColumnasCard(theme, cs),
-      const SizedBox(height: 16),
-      _buildAcercaDeCard(theme, cs),
     ];
   }
 
@@ -591,6 +592,23 @@ class _ConfigScreenState extends State<ConfigScreen> {
               textAlign: TextAlign.center,
             ),
           ],
+
+          const SizedBox(height: 10),
+          Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+          const SizedBox(height: 6),
+
+          TextButton(
+            onPressed: () => showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => _AcercaDeDialog(appVersion: _appVersion),
+            ),
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(40),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const _BtnRow(icon: Symbols.info, label: 'Acerca de'),
+          ),
         ],
       ),
     );
@@ -1059,73 +1077,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
-  // ── Tarjeta: Acerca de ─────────────────────────────────────────────────────
-
-  Widget _buildAcercaDeCard(ThemeData theme, ColorScheme cs) {
-    return _Card(
-      icon: Symbols.info,
-      title: 'Acerca de',
-      accentColor: cs.onSurfaceVariant,
-      theme: theme,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Image.asset('assets/images/Logo_Inventario.png', height: 52,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Megas Inventario',
-                        style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: cs.onSurface)),
-                    if (_appVersion.isNotEmpty)
-                      Text('v$_appVersion',
-                          style: TextStyle(
-                              fontSize: 12, color: cs.onSurfaceVariant)),
-                    Text('Compilado: $kBuildDate',
-                        style: TextStyle(
-                            fontSize: 11, color: cs.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
-          const SizedBox(height: 14),
-          _AcercaRow(icon: Symbols.business,
-              label: 'Empresa', value: 'Megas Quality Services SL', cs: cs),
-          const SizedBox(height: 8),
-          _AcercaRow(icon: Symbols.person,
-              label: 'Desarrollador',
-              value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () => showLicensePage(
-              context: context,
-              applicationName: 'Megas Inventario',
-              applicationVersion: _appVersion.isNotEmpty ? 'v$_appVersion' : '',
-              applicationLegalese:
-                  '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
-            ),
-            icon: const Icon(Symbols.gavel, size: 16),
-            label: const Text('Licencias de código abierto'),
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              textStyle: const TextStyle(fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── Wizard de configuración inicial ────────────────────────────────────────
 
   Widget _buildWizard(ThemeData theme, ColorScheme cs) {
@@ -1147,15 +1098,20 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   children: [
                     // Logo
                     Image.asset('assets/images/Logo_Inventario.png',
-                        height: 90,
+                        height: 100,
                         errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                    const SizedBox(height: 20),
-                    Text('Megas Inventario',
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
                     Text(
                       'Configuración inicial',
                       style: theme.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _appVersion.isNotEmpty
+                          ? 'v$_appVersion · $kBuildDate'
+                          : kBuildDate,
+                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withAlpha(140)),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 36),
@@ -1581,6 +1537,391 @@ class _BtnRow extends StatelessWidget {
       const SizedBox(width: 8),
       Text(label),
     ]);
+  }
+}
+
+class _UpdateDialogConfig extends StatefulWidget {
+  final UpdateInfo update;
+  const _UpdateDialogConfig({required this.update});
+  @override
+  State<_UpdateDialogConfig> createState() => _UpdateDialogConfigState();
+}
+
+class _UpdateDialogConfigState extends State<_UpdateDialogConfig> {
+  bool _descargando = false;
+  bool _error = false;
+  double _progress = 0;
+
+  Future<void> _descargar() async {
+    setState(() { _descargando = true; _error = false; });
+    try {
+      await UpdateService.downloadAndInstall(
+        widget.update.url,
+        onProgress: (p) { if (mounted) setState(() => _progress = p); },
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() { _descargando = false; _error = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Row(children: [
+        Icon(Icons.system_update_rounded, color: cs.primary, size: 22),
+        const SizedBox(width: 10),
+        const Text('Nueva versión disponible'),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Versión ${widget.update.version}',
+              style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary)),
+          if (widget.update.notas.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(widget.update.notas,
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+          ],
+          if (_descargando) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+            const SizedBox(height: 6),
+            Text(_progress > 0
+                ? 'Descargando… ${(_progress * 100).toInt()}%'
+                : 'Conectando…',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+          ],
+          if (_error) ...[
+            const SizedBox(height: 10),
+            Text('Error al descargar. Comprueba la conexión.',
+                style: TextStyle(fontSize: 12, color: cs.error)),
+          ],
+        ],
+      ),
+      actions: _descargando ? null : [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Ahora no'),
+        ),
+        FilledButton.icon(
+          onPressed: _descargar,
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: const Text('Actualizar'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Diálogo: Acerca de ────────────────────────────────────────────────────────
+
+class _AcercaDeDialog extends StatefulWidget {
+  final String appVersion;
+  const _AcercaDeDialog({required this.appVersion});
+  @override
+  State<_AcercaDeDialog> createState() => _AcercaDeDialogState();
+}
+
+class _AcercaDeDialogState extends State<_AcercaDeDialog> {
+  bool _buscando = false;
+  String? _msg;
+
+  // Versiones anteriores
+  bool _showVersiones = false;
+  bool _loadingReleases = false;
+  String? _releasesError;
+  List<ReleaseInfo> _releases = [];
+  ReleaseInfo? _selectedRelease;
+  bool _descargandoRelease = false;
+  double _releaseProgress = 0;
+  bool _releaseError = false;
+
+  Future<void> _cargarReleases() async {
+    setState(() { _loadingReleases = true; _releasesError = null; });
+    try {
+      final list = await UpdateService.getReleases();
+      if (mounted) setState(() { _releases = list; _loadingReleases = false; });
+    } catch (e) {
+      if (mounted) setState(() {
+        _releasesError = 'Error al cargar versiones: $e';
+        _loadingReleases = false;
+      });
+    }
+  }
+
+  Future<void> _instalarRelease() async {
+    final r = _selectedRelease;
+    if (r == null) return;
+    setState(() { _descargandoRelease = true; _releaseError = false; _releaseProgress = 0; });
+    try {
+      await UpdateService.downloadAndInstall(
+        r.url,
+        onProgress: (p) { if (mounted) setState(() => _releaseProgress = p); },
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() { _descargandoRelease = false; _releaseError = true; });
+    }
+  }
+
+  Future<void> _buscarActualizacion() async {
+    setState(() { _buscando = true; _msg = null; });
+    final result = await UpdateService.checkForUpdateVerbose();
+    if (!mounted) return;
+    if (result.error != null) {
+      setState(() { _msg = '❌ Error: ${result.error}'; _buscando = false; });
+      return;
+    }
+    if (result.update != null) {
+      setState(() { _buscando = false; _msg = null; });
+      if (!mounted) return;
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _UpdateDialogConfig(update: result.update!),
+      );
+    } else {
+      setState(() {
+        _msg = '✅ Ya tienes la última versión '
+            '(instalada: ${result.instalada} · disponible: ${result.disponible})';
+        _buscando = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Cabecera con logo + título
+              Row(
+                children: [
+                  Image.asset('assets/images/Logo_Inventario.png', height: 52,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Megas Inventario',
+                            style: TextStyle(fontSize: 16,
+                                fontWeight: FontWeight.w700, color: cs.onSurface)),
+                        if (widget.appVersion.isNotEmpty)
+                          Text('v${widget.appVersion}',
+                              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                        Text('Compilado: $kBuildDate',
+                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+              Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+              const SizedBox(height: 14),
+
+              _AcercaRow(icon: Symbols.business,
+                  label: 'Empresa', value: 'Megas Quality Services SL', cs: cs),
+              const SizedBox(height: 8),
+              _AcercaRow(icon: Symbols.person,
+                  label: 'Desarrollador',
+                  value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
+
+              const SizedBox(height: 16),
+              Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+              const SizedBox(height: 12),
+
+              // Mensaje resultado búsqueda
+              if (_msg != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _msg!.startsWith('❌')
+                        ? cs.errorContainer.withAlpha(80)
+                        : cs.primaryContainer.withAlpha(80),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_msg!, style: TextStyle(fontSize: 12, color: cs.onSurface)),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // Fila de botones
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonal(
+                      onPressed: _buscando ? null : _buscarActualizacion,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                      child: _buscando
+                          ? const SizedBox(width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Icon(Symbols.system_update, size: 16),
+                              SizedBox(width: 6),
+                              Text('Buscar actualizaciones'),
+                            ]),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () => showLicensePage(
+                      context: context,
+                      applicationName: 'Megas Inventario',
+                      applicationVersion: widget.appVersion.isNotEmpty
+                          ? 'v${widget.appVersion}' : '',
+                      applicationLegalese:
+                          '© 2025 Megas Quality Services SL\nDesarrollado por Catalin Andrei Sonca Dobinciuc',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Icon(Symbols.gavel, size: 16),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+              Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
+
+              // ── Versiones anteriores ─────────────────────────────────────
+              Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('Versiones anteriores',
+                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                  leading: Icon(Symbols.history, size: 18, color: cs.onSurfaceVariant),
+                  initiallyExpanded: _showVersiones,
+                  onExpansionChanged: (v) {
+                    setState(() => _showVersiones = v);
+                    if (v && _releases.isEmpty && !_loadingReleases) _cargarReleases();
+                  },
+                  children: [
+                    if (_loadingReleases)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else if (_releasesError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(_releasesError!,
+                            style: TextStyle(fontSize: 12, color: cs.error)),
+                      )
+                    else if (_releases.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text('No se encontraron versiones.',
+                            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      )
+                    else ...[
+                      // Dropdown selección de versión
+                      DropdownButtonFormField<ReleaseInfo>(
+                        value: _selectedRelease,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Seleccionar versión',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        items: _releases.map((r) => DropdownMenuItem(
+                          value: r,
+                          child: Text('v${r.version}', style: const TextStyle(fontSize: 13)),
+                        )).toList(),
+                        onChanged: _descargandoRelease
+                            ? null
+                            : (v) => setState(() { _selectedRelease = v; _releaseError = false; }),
+                      ),
+
+                      // Notas de la versión seleccionada
+                      if (_selectedRelease != null && _selectedRelease!.notas.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest.withAlpha(120),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(_selectedRelease!.notas,
+                              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                        ),
+                      ],
+
+                      // Progreso + errores
+                      if (_descargandoRelease) ...[
+                        const SizedBox(height: 10),
+                        LinearProgressIndicator(
+                            value: _releaseProgress > 0 ? _releaseProgress : null),
+                        const SizedBox(height: 4),
+                        Text(
+                          _releaseProgress > 0
+                              ? 'Descargando… ${(_releaseProgress * 100).toInt()}%'
+                              : 'Conectando…',
+                          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                        ),
+                      ],
+                      if (_releaseError) ...[
+                        const SizedBox(height: 6),
+                        Text('Error al descargar. Comprueba la conexión.',
+                            style: TextStyle(fontSize: 12, color: cs.error)),
+                      ],
+
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: (_selectedRelease == null || _descargandoRelease)
+                              ? null
+                              : _instalarRelease,
+                          icon: const Icon(Icons.download_rounded, size: 16),
+                          label: const Text('Instalar esta versión'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: cs.secondary,
+                            foregroundColor: cs.onSecondary,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cerrar'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

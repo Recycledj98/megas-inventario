@@ -1,7 +1,7 @@
 name: megas_inventario
 description: App de inventario offline-first para MegasWeb
 publish_to: 'none'
-version: 1.2.9+21
+version: 2.1.2+29
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -42,6 +42,10 @@ dependencies:
 
   # Versión de la app en tiempo de ejecución
   package_info_plus: ^8.1.2
+
+  # Auto-update
+  path_provider: ^2.1.4
+  open_filex: ^4.5.0
 
   # UI
   flutter_speed_dial: ^7.0.0
