@@ -62,6 +62,25 @@ const Map<String, List<NtxIndexDef>> ntxIndexesByDbf = {
 
 const _pageSize = 1024;
 
+/// Info del header de un NTX existente (para regenerar con la expresión real
+/// de cada instalación en vez de asumir las de GC05.PRG).
+class NtxHeaderInfo {
+  final String expression;
+  final int keySize;
+  final int unique;
+  const NtxHeaderInfo(this.expression, this.keySize, this.unique);
+
+  static NtxHeaderInfo parse(Uint8List header) {
+    if (header.length < 280) throw NtxException('header NTX demasiado corto');
+    final bd = ByteData.sublistView(header);
+    final exprBytes = header.sublist(22, 278);
+    final nul = exprBytes.indexOf(0);
+    final expr =
+        String.fromCharCodes(exprBytes.sublist(0, nul < 0 ? 256 : nul)).trim();
+    return NtxHeaderInfo(expr, bd.getUint16(14, Endian.little), header[278]);
+  }
+}
+
 class _Segment {
   final int offset; // offset dentro del registro crudo (flag incluido)
   final int length;

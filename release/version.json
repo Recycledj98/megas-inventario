@@ -1,5 +1,5 @@
 ﻿{
-  "version": "2.5.2",
+  "version": "2.5.3",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Filtros de clase 1-5 siempre visibles en recepcion. Diagnostico del envio: cada fase queda registrada con su duracion en Incidencias, y se verifica el contador de E_S_ALMA tras escribir."
+  "notas": "Los indices se regeneran con la expresion de clave leida del propio servidor (cada instalacion puede indexar distinto) y solo si existen; nunca se crean nuevos. Verificacion de tamano de clave antes de escribir."
 }

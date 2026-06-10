@@ -155,6 +155,43 @@ class LegacyService {
     return canonical;
   }
 
+  /// Regenera los índices de [dbfKey] que EXISTAN en el servidor, usando la
+  /// expresión de clave leída del header de cada NTX real (cada instalación
+  /// de GC puede indexar distinto). Nunca crea índices nuevos, y aborta si la
+  /// clave generada no encaja con la del servidor.
+  Future<void> _regenerarIndices(Smb2Pool smb, String dbfKey, DbfFile dbf,
+      Map<String, Uint8List> out, void Function(String) fase) async {
+    for (final def in ntxIndexesByDbf[dbfKey]!) {
+      final nombre = await _ntxRemoteName(smb, def.ntxFile);
+      Uint8List head;
+      try {
+        head = await smb
+            .readFileRange(_path(nombre), offset: 0, length: 1024)
+            .timeout(_smbTimeout);
+      } catch (_) {
+        fase('índice ${def.ntxFile} no existe en el servidor: no se genera');
+        continue;
+      }
+      final info = NtxHeaderInfo.parse(head);
+      if (info.unique != 0) {
+        throw LegacyException(
+            'El índice $nombre es UNIQUE y no está soportado. Envío abortado.');
+      }
+      final expr = info.expression.isNotEmpty ? info.expression : def.expression;
+      final built = NtxBuilder.build(dbf, expr);
+      final builtKeySize =
+          ByteData.sublistView(built).getUint16(14, Endian.little);
+      if (info.keySize != 0 && builtKeySize != info.keySize) {
+        throw LegacyException(
+            'Índice $nombre: clave generada de ${builtKeySize}B pero el servidor '
+            'usa ${info.keySize}B (expresión "$expr"). Abortado para no '
+            'corromper índices.');
+      }
+      out[nombre] = built;
+      fase('índice $nombre regenerado con expresión "$expr"');
+    }
+  }
+
   // ── ID estable para artículos legacy (FNV-1a 32-bit) ──────────────────────
 
   static int _articuloId(String codigoArt) {
@@ -695,14 +732,10 @@ class LegacyService {
       // cambios de FECCAD_LOT. Los updates de stock no tocan ninguna clave.
       final ntxFiles = <String, Uint8List>{};
       if (stoDbf.hasAppends || stocklotClaveCambiada) {
-        for (final def in ntxIndexesByDbf['STOCKLOT.DBF']!) {
-          ntxFiles[def.ntxFile] = NtxBuilder.build(stoDbf, def.expression);
-        }
+        await _regenerarIndices(smb, 'STOCKLOT.DBF', stoDbf, ntxFiles, fase);
       }
       if (esDbf != null && movimientos > 0) {
-        for (final def in ntxIndexesByDbf['E_S_ALMA.DBF']!) {
-          ntxFiles[def.ntxFile] = NtxBuilder.build(esDbf, def.expression);
-        }
+        await _regenerarIndices(smb, 'E_S_ALMA.DBF', esDbf, ntxFiles, fase);
       }
 
       fase('índices regenerados en memoria: ${ntxFiles.length} '
@@ -737,9 +770,8 @@ class LegacyService {
       // Escribir índices regenerados (nombre definitivo: ningún puesto puede
       // tener la tabla abierta mientras su DBF está renombrado)
       for (final e in ntxFiles.entries) {
-        final nombre = await _ntxRemoteName(smb, e.key);
-        await _writeFile(smb, nombre, e.value);
-        fase('subido índice $nombre (${(e.value.length / 1024).round()} KB)');
+        await _writeFile(smb, e.key, e.value);
+        fase('subido índice ${e.key} (${(e.value.length / 1024).round()} KB)');
       }
 
       // Verificación: el contador de registros de E_S_ALMA en el servidor
@@ -813,9 +845,11 @@ class LegacyService {
         // Solo CBARRA_ART forma parte de una clave de índice (ARTIC_4):
         // regenerar los índices de ARTICULO únicamente si cambió.
         if (cbarra != null) {
-          for (final def in ntxIndexesByDbf['ARTICULO.DBF']!) {
-            await _writeFile(smb, await _ntxRemoteName(smb, def.ntxFile),
-                NtxBuilder.build(artDbf, def.expression));
+          final ntxFiles = <String, Uint8List>{};
+          await _regenerarIndices(smb, 'ARTICULO.DBF', artDbf, ntxFiles,
+              (m) => LogService.registrar('GUARDAR ART: $m'));
+          for (final e in ntxFiles.entries) {
+            await _writeFile(smb, e.key, e.value);
           }
         }
       }
