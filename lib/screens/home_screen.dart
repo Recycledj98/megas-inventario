@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -150,6 +151,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _filterFamiliaNombre;
   String? _filterConteo; // null = todos, 'contados', 'sin_contar'
 
+  // Filtros de clase (cascade: nivel 1→5)
+  List<String> _clases1 = [], _clases2 = [], _clases3 = [], _clases4 = [], _clases5 = [];
+  String? _filterClase1, _filterClase2, _filterClase3, _filterClase4, _filterClase5;
+
   ArticulosLocalData? _selected;
   bool _loading = true;
   bool _syncing = false;
@@ -227,13 +232,44 @@ class _HomeScreenState extends State<HomeScreen> {
     final eid = ConfigService.isLegacyMode ? 0 : ConfigService.empresaId;
     if (!ConfigService.isLegacyMode && eid <= 0) return;
     final provs = await _db.getDistinctProveedores(eid);
-    final fams = await _db.getDistinctFamilias(eid);
-    if (mounted) {
-      setState(() {
-        _proveedores = provs;
-        _familias = fams;
-      });
-    }
+    final fams  = await _db.getDistinctFamilias(eid);
+    if (mounted) setState(() { _proveedores = provs; _familias = fams; });
+    await _reloadClaseOptions();
+  }
+
+  Future<void> _reloadClaseOptions() async {
+    final eid = ConfigService.isLegacyMode ? 0 : ConfigService.empresaId;
+    final results = await Future.wait([
+      _db.getDistinctClase(eid, 1, proveedorNombre: _filterProveedorNombre, familiaNombre: _filterFamiliaNombre),
+      _db.getDistinctClase(eid, 2, proveedorNombre: _filterProveedorNombre, familiaNombre: _filterFamiliaNombre),
+      _db.getDistinctClase(eid, 3, proveedorNombre: _filterProveedorNombre, familiaNombre: _filterFamiliaNombre),
+      _db.getDistinctClase(eid, 4, proveedorNombre: _filterProveedorNombre, familiaNombre: _filterFamiliaNombre),
+      _db.getDistinctClase(eid, 5, proveedorNombre: _filterProveedorNombre, familiaNombre: _filterFamiliaNombre),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _clases1 = results[0]; _clases2 = results[1]; _clases3 = results[2];
+      _clases4 = results[3]; _clases5 = results[4];
+      // Limpiar selecciones que ya no están disponibles
+      if (!_clases1.contains(_filterClase1)) _filterClase1 = null;
+      if (!_clases2.contains(_filterClase2)) _filterClase2 = null;
+      if (!_clases3.contains(_filterClase3)) _filterClase3 = null;
+      if (!_clases4.contains(_filterClase4)) _filterClase4 = null;
+      if (!_clases5.contains(_filterClase5)) _filterClase5 = null;
+    });
+  }
+
+  void _onClaseChanged(int nivel, String? v) {
+    setState(() {
+      switch (nivel) {
+        case 1: _filterClase1 = v;
+        case 2: _filterClase2 = v;
+        case 3: _filterClase3 = v;
+        case 4: _filterClase4 = v;
+        case 5: _filterClase5 = v;
+      }
+    });
+    _loadData();
   }
 
   Future<void> _loadData() async {
@@ -267,6 +303,8 @@ class _HomeScreenState extends State<HomeScreen> {
           search: _search.isEmpty ? null : _search,
           proveedorNombre: _filterProveedorNombre,
           familiaNombre: _filterFamiliaNombre,
+          clase1: _filterClase1, clase2: _filterClase2,
+          clase3: _filterClase3, clase4: _filterClase4, clase5: _filterClase5,
           sortOrder: _sortOrder,
         );
         final stkFut    = _db.getStockTotalPorArticulo(eid);
@@ -542,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-    if (ok == true) SystemNavigator.pop();
+    if (ok == true) exit(0);
   }
 
   void _scrollToSelected() {
@@ -616,10 +654,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final hasLinea = _selected != null &&
         _lineasMap.containsKey(_selected!.articuloId);
 
-    final hasFilters =
-        _proveedores.isNotEmpty || _familias.isNotEmpty;
-    final filterActive =
-        _filterProveedorNombre != null || _filterFamiliaNombre != null;
+    final hasFilters = _proveedores.isNotEmpty || _familias.isNotEmpty || _clases1.isNotEmpty;
+    final filterActive = _filterProveedorNombre != null || _filterFamiliaNombre != null ||
+        _filterClase1 != null || _filterClase2 != null || _filterClase3 != null ||
+        _filterClase4 != null || _filterClase5 != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -736,19 +774,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           familias: _familias,
                           proveedorNombre: _filterProveedorNombre,
                           familiaNombre: _filterFamiliaNombre,
+                          clases1: _clases1, clases2: _clases2,
+                          clases3: _clases3, clases4: _clases4, clases5: _clases5,
+                          filterClase1: _filterClase1, filterClase2: _filterClase2,
+                          filterClase3: _filterClase3, filterClase4: _filterClase4,
+                          filterClase5: _filterClase5,
                           filterActive: filterActive,
-                          onProveedorChanged: (v) {
-                            setState(() => _filterProveedorNombre = v);
-                            _loadData();
-                          },
-                          onFamiliaChanged: (v) {
-                            setState(() => _filterFamiliaNombre = v);
-                            _loadData();
-                          },
+                          onProveedorChanged: (v) async { setState(() => _filterProveedorNombre = v); await _reloadClaseOptions(); _loadData(); },
+                          onFamiliaChanged:   (v) async { setState(() => _filterFamiliaNombre   = v); await _reloadClaseOptions(); _loadData(); },
+                          onClaseChanged: _onClaseChanged,
                           onClearFilters: () {
                             setState(() {
-                              _filterProveedorNombre = null;
-                              _filterFamiliaNombre = null;
+                              _filterProveedorNombre = null; _filterFamiliaNombre = null;
+                              _filterClase1 = null; _filterClase2 = null;
+                              _filterClase3 = null; _filterClase4 = null; _filterClase5 = null;
                             });
                             _loadData();
                           },
@@ -1134,9 +1173,12 @@ class _FilterBar extends StatelessWidget {
   final List<String> familias;
   final String? proveedorNombre;
   final String? familiaNombre;
+  final List<String> clases1, clases2, clases3, clases4, clases5;
+  final String? filterClase1, filterClase2, filterClase3, filterClase4, filterClase5;
   final bool filterActive;
   final ValueChanged<String?> onProveedorChanged;
   final ValueChanged<String?> onFamiliaChanged;
+  final void Function(int nivel, String? v) onClaseChanged;
   final VoidCallback onClearFilters;
 
   const _FilterBar({
@@ -1144,70 +1186,120 @@ class _FilterBar extends StatelessWidget {
     required this.familias,
     required this.proveedorNombre,
     required this.familiaNombre,
+    required this.clases1, required this.clases2,
+    required this.clases3, required this.clases4, required this.clases5,
+    required this.filterClase1, required this.filterClase2,
+    required this.filterClase3, required this.filterClase4, required this.filterClase5,
     required this.filterActive,
     required this.onProveedorChanged,
     required this.onFamiliaChanged,
+    required this.onClaseChanged,
     required this.onClearFilters,
   });
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
+    final cs        = Theme.of(context).colorScheme;
     final landscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final rowH      = landscape ? 36.0 : 40.0;
+
+    final hasClases = clases1.isNotEmpty || clases2.isNotEmpty || clases3.isNotEmpty ||
+        clases4.isNotEmpty || clases5.isNotEmpty;
+    final claseRows = <(int, List<String>, String?, String)>[
+      if (clases1.isNotEmpty) (1, clases1, filterClase1, 'Cl.1'),
+      if (clases2.isNotEmpty) (2, clases2, filterClase2, 'Cl.2'),
+      if (clases3.isNotEmpty) (3, clases3, filterClase3, 'Cl.3'),
+      if (clases4.isNotEmpty) (4, clases4, filterClase4, 'Cl.4'),
+      if (clases5.isNotEmpty) (5, clases5, filterClase5, 'Cl.5'),
+    ];
+
     return Container(
-      height: landscape ? 36 : 40,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
       color: cs.surfaceContainerLow,
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (proveedores.isNotEmpty) ...[
-            Text('Proveedor:',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant)),
-            const SizedBox(width: 4),
-            Expanded(
-              child: _FilterDropdown(
-                hint: 'Todos',
-                value: proveedorNombre,
-                items: proveedores,
-                onChanged: onProveedorChanged,
+          // Fila 1: Proveedor + Familia
+          if (proveedores.isNotEmpty || familias.isNotEmpty)
+            SizedBox(
+              height: rowH,
+              child: Row(
+                children: [
+                  if (proveedores.isNotEmpty) ...[
+                    Text('Proveedor:',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                            color: cs.onSurfaceVariant)),
+                    const SizedBox(width: 4),
+                    Expanded(child: _FilterDropdown(
+                      hint: 'Todos', value: proveedorNombre,
+                      items: proveedores, onChanged: onProveedorChanged,
+                    )),
+                  ],
+                  if (proveedores.isNotEmpty && familias.isNotEmpty) const SizedBox(width: 12),
+                  if (familias.isNotEmpty) ...[
+                    Text('Familia:',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                            color: cs.onSurfaceVariant)),
+                    const SizedBox(width: 4),
+                    Expanded(child: _FilterDropdown(
+                      hint: 'Todas', value: familiaNombre,
+                      items: familias, onChanged: onFamiliaChanged,
+                    )),
+                  ],
+                  if (filterActive && !hasClases)
+                    _clearBtn(cs),
+                ],
               ),
             ),
-          ],
-          if (proveedores.isNotEmpty && familias.isNotEmpty)
-            const SizedBox(width: 12),
-          if (familias.isNotEmpty) ...[
-            Text('Familia:',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant)),
-            const SizedBox(width: 4),
-            Expanded(
-              child: _FilterDropdown(
-                hint: 'Todas',
-                value: familiaNombre,
-                items: familias,
-                onChanged: onFamiliaChanged,
+
+          // Fila 2: Clases en cascada (scroll horizontal)
+          if (hasClases)
+            SizedBox(
+              height: rowH,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final (nivel, opts, sel, label) in claseRows) ...[
+                            if (nivel > 1) const SizedBox(width: 4),
+                            Text('$label:',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                                    color: sel != null ? cs.primary : cs.onSurfaceVariant)),
+                            const SizedBox(width: 2),
+                            SizedBox(
+                              width: 160,
+                              child: _FilterDropdown(
+                                hint: 'Todas',
+                                value: sel,
+                                items: opts,
+                                labelOf: ConfigService.claseLabel,
+                                onChanged: (v) => onClaseChanged(nivel, v),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (filterActive) _clearBtn(cs),
+                ],
               ),
-            ),
-          ],
-          if (filterActive)
-            IconButton(
-              icon: Icon(Symbols.filter_alt_off,
-                  size: 18, color: cs.primary),
-              tooltip: 'Quitar filtros',
-              onPressed: onClearFilters,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              constraints: const BoxConstraints(),
             ),
         ],
       ),
     );
   }
+
+  Widget _clearBtn(ColorScheme cs) => IconButton(
+    icon: Icon(Symbols.filter_alt_off, size: 18, color: cs.primary),
+    tooltip: 'Quitar filtros',
+    onPressed: onClearFilters,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    constraints: const BoxConstraints(),
+  );
 }
 
 class _FilterDropdown extends StatelessWidget {
@@ -1215,12 +1307,14 @@ class _FilterDropdown extends StatelessWidget {
   final String? value;
   final List<String> items;
   final ValueChanged<String?> onChanged;
+  final String Function(String)? labelOf; // si null, usa el valor como label
 
   const _FilterDropdown({
     required this.hint,
     required this.value,
     required this.items,
     required this.onChanged,
+    this.labelOf,
   });
 
   @override
@@ -1244,7 +1338,7 @@ class _FilterDropdown extends StatelessWidget {
           ),
           ...items.map((nombre) => DropdownMenuItem<String?>(
                 value: nombre,
-                child: Text(nombre,
+                child: Text(labelOf?.call(nombre) ?? nombre,
                     style: TextStyle(fontSize: 12, color: cs.onSurface),
                     overflow: TextOverflow.ellipsis),
               )),
@@ -1463,11 +1557,11 @@ class _BottomInfoPanel extends StatelessWidget {
                       GestureDetector(
                         onTap: onConfig,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Symbols.settings, size: 13, color: cs.onSurfaceVariant.withAlpha(180)),
-                            const SizedBox(width: 2),
-                            Text('Config', style: TextStyle(fontSize: 9, color: cs.onSurfaceVariant.withAlpha(180))),
+                            Icon(Symbols.settings, size: 18, color: cs.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Text('Config', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontWeight: FontWeight.w500)),
                           ]),
                         ),
                       ),
@@ -1475,11 +1569,11 @@ class _BottomInfoPanel extends StatelessWidget {
                       GestureDetector(
                         onTap: onSalir,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Symbols.logout, size: 13, color: cs.error.withAlpha(180)),
-                            const SizedBox(width: 2),
-                            Text('Salir', style: TextStyle(fontSize: 9, color: cs.error.withAlpha(180))),
+                            Icon(Symbols.logout, size: 18, color: cs.error),
+                            const SizedBox(width: 4),
+                            Text('Salir', style: TextStyle(fontSize: 12, color: cs.error, fontWeight: FontWeight.w500)),
                           ]),
                         ),
                       ),

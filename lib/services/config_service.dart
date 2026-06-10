@@ -21,6 +21,7 @@ const _kLegacySmbUser       = 'legacy_smb_user';
 const _kLegacySmbPass       = 'legacy_smb_pass';
 const _kLegacyAlmacen       = 'legacy_almacen';
 const _kLegacyEmpresaNombre = 'legacy_empresa_nombre';
+const _kClaseNombres        = 'clase_nombres'; // Map<code, nombre> de CLASEART
 
 const _kDefaultCols = [
   {'id': 'ubicacion',  'label': 'Ubicación',  'visible': true},
@@ -181,5 +182,73 @@ class ConfigService {
         ? serverUrl.substring(0, serverUrl.length - 1)
         : serverUrl;
     return '$base$path';
+  }
+
+  // ── Backup / Restore ──────────────────────────────────────────────────────
+
+  static Map<String, dynamic> exportToJson() => {
+    _kLegacyMode:          isLegacyMode,
+    _kServerUrl:           serverUrl,
+    _kEmpresaId:           empresaId,
+    _kEmpresaNombre:       empresaNombre,
+    _kUsuario:             usuario,
+    _kLegacySmbHost:       legacySmbHost,
+    _kLegacySmbShare:      legacySmbShare,
+    _kLegacySmbPath:       legacySmbPath,
+    _kLegacySmbUser:       legacySmbUser,
+    _kLegacySmbPass:       legacySmbPass,
+    _kLegacyAlmacen:       legacyAlmacen,
+    _kLegacyEmpresaNombre: legacyEmpresaNombre,
+    _kLegacyUsuarios:      _prefs.getString(_kLegacyUsuarios) ?? '',
+    _kTableFontSize:       tableFontSize,
+    _kTableFont:           tableFont,
+    _kTableFontBold:       tableFontBold,
+    _kTableColumns:        _prefs.getString(_kTableColumns) ?? '',
+    _kSortOrder:           sortOrder,
+  };
+
+  static Future<void> importFromJson(Map<String, dynamic> data) async {
+    if (data[_kLegacyMode] is bool)  await _prefs.setBool  (_kLegacyMode,          data[_kLegacyMode] as bool);
+    if (data[_kServerUrl]  is String && (data[_kServerUrl] as String).isNotEmpty)
+                                      await _prefs.setString(_kServerUrl,            data[_kServerUrl] as String);
+    if (data[_kEmpresaId]  is int)    await _prefs.setInt   (_kEmpresaId,            data[_kEmpresaId] as int);
+    if (data[_kEmpresaNombre] is String) await _prefs.setString(_kEmpresaNombre,     data[_kEmpresaNombre] as String);
+    if (data[_kUsuario]    is String) await _prefs.setString(_kUsuario,              data[_kUsuario] as String);
+    if (data[_kLegacySmbHost]  is String) await _prefs.setString(_kLegacySmbHost,   data[_kLegacySmbHost] as String);
+    if (data[_kLegacySmbShare] is String) await _prefs.setString(_kLegacySmbShare,  data[_kLegacySmbShare] as String);
+    if (data[_kLegacySmbPath]  is String) await _prefs.setString(_kLegacySmbPath,   data[_kLegacySmbPath] as String);
+    if (data[_kLegacySmbUser]  is String) await _prefs.setString(_kLegacySmbUser,   data[_kLegacySmbUser] as String);
+    if (data[_kLegacySmbPass]  is String) await _prefs.setString(_kLegacySmbPass,   data[_kLegacySmbPass] as String);
+    if (data[_kLegacyAlmacen]  is String) await _prefs.setString(_kLegacyAlmacen,   data[_kLegacyAlmacen] as String);
+    if (data[_kLegacyEmpresaNombre] is String) await _prefs.setString(_kLegacyEmpresaNombre, data[_kLegacyEmpresaNombre] as String);
+    if (data[_kLegacyUsuarios] is String && (data[_kLegacyUsuarios] as String).isNotEmpty)
+                                      await _prefs.setString(_kLegacyUsuarios,       data[_kLegacyUsuarios] as String);
+    if (data[_kTableFontSize] is num) await _prefs.setDouble(_kTableFontSize,        (data[_kTableFontSize] as num).toDouble());
+    if (data[_kTableFont]  is String) await _prefs.setString(_kTableFont,            data[_kTableFont] as String);
+    if (data[_kTableFontBold] is bool) await _prefs.setBool (_kTableFontBold,        data[_kTableFontBold] as bool);
+    if (data[_kTableColumns] is String && (data[_kTableColumns] as String).isNotEmpty)
+                                      await _prefs.setString(_kTableColumns,         data[_kTableColumns] as String);
+    if (data[_kSortOrder]  is String) await _prefs.setString(_kSortOrder,            data[_kSortOrder] as String);
+  }
+
+  // ── Nombres de clases de artículo (cache de CLASEART.DBF) ─────────────────
+
+  static Map<String, String> get claseNombres {
+    try {
+      final raw = _prefs.getString(_kClaseNombres) ?? '{}';
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } catch (_) { return {}; }
+  }
+
+  static Future<void> saveClaseNombres(Map<String, String> nombres) async {
+    await _prefs.setString(_kClaseNombres, jsonEncode(nombres));
+  }
+
+  /// Devuelve "CODE - NOMBRE" si hay nombre, o solo "CODE" si no.
+  static String claseLabel(String code) {
+    final trimmed = code.trim();
+    final nombre  = claseNombres[trimmed];
+    if (nombre == null || nombre.isEmpty || nombre == trimmed) return trimmed;
+    return '$trimmed - $nombre';
   }
 }

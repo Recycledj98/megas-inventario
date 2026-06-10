@@ -300,6 +300,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       builder: (_) => _DialogFiltrosRecibir(
         db: _db,
         empresaId: _legacyMode ? 0 : ConfigService.empresaId,
+        legacy: _legacyMode ? _legacy : null,
       ),
     );
     if (filtros == null || !mounted) return;
@@ -313,7 +314,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
         final pendientes = await _db.getPendientesSync(0);
         for (final c in pendientes) await _db.cerrarCabecera(c.id);
         final result = await _legacy.recibir(filtros: filtros != null
-            ? LegacyFiltros(proveedor: filtros.proveedor, familia: filtros.familia, tipos: filtros.tipos)
+            ? LegacyFiltros(proveedor: filtros.proveedor, familia: filtros.familia, tipos: filtros.tipos, clases: filtros.clases)
             : null);
         if (result.empresaNombre.isNotEmpty) {
           await ConfigService.saveLegacyEmpresaNombre(result.empresaNombre);
@@ -1793,10 +1794,6 @@ class _AcercaDeDialogState extends State<_AcercaDeDialog> {
 
               _AcercaRow(icon: Symbols.business,
                   label: 'Empresa', value: 'Megas Quality Services SL', cs: cs),
-              const SizedBox(height: 8),
-              _AcercaRow(icon: Symbols.person,
-                  label: 'Desarrollador',
-                  value: 'Catalin Andrei Sonca Dobinciuc', cs: cs),
 
               const SizedBox(height: 16),
               Divider(height: 1, color: cs.outlineVariant.withAlpha(60)),
@@ -2059,8 +2056,14 @@ class _LoadingRow extends StatelessWidget {
 class _RecibirFiltros {
   final String? proveedor;
   final String? familia;
-  final Set<String> tipos; // vacío = todos
-  const _RecibirFiltros({this.proveedor, this.familia, this.tipos = const {}});
+  final Set<String> tipos;
+  final Map<int, String> clases; // clave 1-5 → código clase; vacío = todos
+  const _RecibirFiltros({
+    this.proveedor,
+    this.familia,
+    this.tipos = const {},
+    this.clases = const {},
+  });
 }
 
 // Tipos de artículo definidos en ARTICULO.DBF campo TIPO_ART
@@ -2075,7 +2078,8 @@ const _kTiposArt = [
 class _DialogFiltrosRecibir extends StatefulWidget {
   final AppDatabase db;
   final int empresaId;
-  const _DialogFiltrosRecibir({required this.db, required this.empresaId});
+  final LegacyService? legacy;
+  const _DialogFiltrosRecibir({required this.db, required this.empresaId, this.legacy});
 
   @override
   State<_DialogFiltrosRecibir> createState() => _DialogFiltrosRecibirState();
@@ -2084,10 +2088,12 @@ class _DialogFiltrosRecibir extends StatefulWidget {
 class _DialogFiltrosRecibirState extends State<_DialogFiltrosRecibir> {
   String? _proveedor;
   String? _familia;
-  final Set<String> _tipos = {}; // vacío = todos
+  final Set<String> _tipos  = {};
+  final Map<int, String?> _clasesSel = {}; // clave 1-5 → código seleccionado
 
   List<String> _proveedores = [];
   List<String> _familias   = [];
+  Map<int, List<(String, String)>> _clasesOpts = {}; // clave 1-5 → opciones
   bool _loading = true;
 
   @override
@@ -2099,7 +2105,31 @@ class _DialogFiltrosRecibirState extends State<_DialogFiltrosRecibir> {
   Future<void> _loadOpciones() async {
     final provs = await widget.db.getDistinctProveedores(widget.empresaId);
     final fams  = await widget.db.getDistinctFamilias(widget.empresaId);
-    if (mounted) setState(() { _proveedores = provs; _familias = fams; _loading = false; });
+    Map<int, List<(String, String)>> clases = {};
+    if (widget.legacy != null) {
+      try { clases = await widget.legacy!.readClaseOptions(); } catch (_) {}
+    }
+    // Completar con las clases presentes en los artículos locales: CLASEART
+    // puede no tener filas para todos los niveles (p. ej. 4 y 5) y sin esto
+    // esos filtros no aparecerían en el diálogo.
+    for (int i = 1; i <= 5; i++) {
+      try {
+        final codes = await widget.db.getDistinctClase(widget.empresaId, i);
+        final existentes = (clases[i] ?? []).map((o) => o.$1).toSet();
+        final extra = codes
+            .where((c) => c.trim().isNotEmpty && !existentes.contains(c))
+            .toList();
+        if (extra.isNotEmpty) {
+          clases.putIfAbsent(i, () => []).addAll(extra.map((c) => (c, '')));
+        }
+      } catch (_) {}
+    }
+    if (mounted) setState(() {
+      _proveedores = provs;
+      _familias    = fams;
+      _clasesOpts  = clases;
+      _loading     = false;
+    });
   }
 
   String get _tipoLabel {
@@ -2263,6 +2293,44 @@ class _DialogFiltrosRecibirState extends State<_DialogFiltrosRecibir> {
                       ),
                     ),
                   ),
+
+                // Clases de artículo (1-5) — solo se muestran las que tienen opciones
+                if (_clasesOpts.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  ...[for (int i = 1; i <= 5; i++) i]
+                      .where((i) => _clasesOpts.containsKey(i) && _clasesOpts[i]!.isNotEmpty)
+                      .map((i) {
+                    final opts = _clasesOpts[i]!;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: DropdownButtonFormField<String?>(
+                        value: _clasesSel[i],
+                        style: TextStyle(color: cs.onSurface, fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: 'CLASE $i',
+                          prefixIcon: const Icon(Symbols.class_, size: 20),
+                        ),
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Todas', style: TextStyle(color: cs.onSurfaceVariant)),
+                          ),
+                          ...opts.map((o) => DropdownMenuItem<String?>(
+                                value: o.$1,
+                                child: Text('${o.$1}  ${o.$2}',
+                                    style: TextStyle(color: cs.onSurface),
+                                    overflow: TextOverflow.ellipsis),
+                              )),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _clasesSel[i] = v;
+                          // Cascade reset: limpiar niveles inferiores
+                          for (int j = i + 1; j <= 5; j++) _clasesSel.remove(j);
+                        }),
+                      ),
+                    );
+                  }),
+                ],
               ],
 
               const SizedBox(height: 24),
@@ -2281,6 +2349,11 @@ class _DialogFiltrosRecibirState extends State<_DialogFiltrosRecibir> {
                         proveedor: _proveedor,
                         familia: _familia,
                         tipos: Set.from(_tipos),
+                        clases: Map.fromEntries(
+                          _clasesSel.entries
+                              .where((e) => e.value != null)
+                              .map((e) => MapEntry(e.key, e.value!)),
+                        ),
                       ),
                     ),
                     icon: const Icon(Symbols.download, size: 18),

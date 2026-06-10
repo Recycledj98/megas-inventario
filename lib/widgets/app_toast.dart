@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../services/feedback_service.dart';
 
-/// Notificación flotante estilo iOS — desliza desde la parte superior.
+/// Notificación flotante — desliza desde la parte inferior.
 class AppToast {
   static OverlayEntry? _current;
 
@@ -67,7 +67,7 @@ class _ToastWidgetState extends State<_ToastWidget>
       duration: const Duration(milliseconds: 380),
       reverseDuration: const Duration(milliseconds: 280),
     );
-    _slide = Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(
+    _slide = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
     );
     _fade = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -95,15 +95,15 @@ class _ToastWidgetState extends State<_ToastWidget>
     final icon = widget.isError ? Symbols.error_outline : Symbols.check_circle;
 
     return Positioned(
-      top: 0, left: 0, right: 0,
+      bottom: 0, left: 0, right: 0,
       child: SlideTransition(
         position: _slide,
         child: FadeTransition(
           opacity: _fade,
           child: SafeArea(
-            bottom: false,
+            top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: GestureDetector(
                 onTap: _dismiss,
                 child: Material(

@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase._internal() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -35,6 +35,13 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(articulosLocal, articulosLocal.peso);
             await m.addColumn(articulosLocal, articulosLocal.unicaj);
             await m.addColumn(articulosLocal, articulosLocal.unipal);
+          }
+          if (from < 4) {
+            await m.addColumn(articulosLocal, articulosLocal.clase1);
+            await m.addColumn(articulosLocal, articulosLocal.clase2);
+            await m.addColumn(articulosLocal, articulosLocal.clase3);
+            await m.addColumn(articulosLocal, articulosLocal.clase4);
+            await m.addColumn(articulosLocal, articulosLocal.clase5);
           }
         },
       );
@@ -50,6 +57,11 @@ class AppDatabase extends _$AppDatabase {
     String? search,
     String? proveedorNombre,
     String? familiaNombre,
+    String? clase1,
+    String? clase2,
+    String? clase3,
+    String? clase4,
+    String? clase5,
     String sortOrder = 'ubicacion',
   }) {
     final q = select(articulosLocal)
@@ -62,12 +74,13 @@ class AppDatabase extends _$AppDatabase {
           t.codigoAlternativo2.like('%$search%') |
           t.identificacion.like('%$search%'));
     }
-    if (proveedorNombre != null) {
-      q.where((t) => t.proveedorNombre.equals(proveedorNombre));
-    }
-    if (familiaNombre != null) {
-      q.where((t) => t.familiaNombre.equals(familiaNombre));
-    }
+    if (proveedorNombre != null) q.where((t) => t.proveedorNombre.equals(proveedorNombre));
+    if (familiaNombre   != null) q.where((t) => t.familiaNombre.equals(familiaNombre));
+    if (clase1 != null) q.where((t) => t.clase1.equals(clase1));
+    if (clase2 != null) q.where((t) => t.clase2.equals(clase2));
+    if (clase3 != null) q.where((t) => t.clase3.equals(clase3));
+    if (clase4 != null) q.where((t) => t.clase4.equals(clase4));
+    if (clase5 != null) q.where((t) => t.clase5.equals(clase5));
     switch (sortOrder) {
       case 'codigo':
         q.orderBy([(t) => OrderingTerm.asc(t.identificacion)]);
@@ -84,6 +97,34 @@ class AppDatabase extends _$AppDatabase {
                    (t) => OrderingTerm.asc(t.identificacion)]);
     }
     return q.get();
+  }
+
+  /// Devuelve valores distintos de clase[n] (1-5) respetando los filtros de
+  /// clases superiores ya seleccionados (cascade).
+  Future<List<String>> getDistinctClase(
+    int empresaId,
+    int n, {
+    String? clase1, String? clase2, String? clase3, String? clase4,
+    String? proveedorNombre, String? familiaNombre,
+  }) async {
+    final col = switch (n) {
+      1 => 'clase1', 2 => 'clase2', 3 => 'clase3',
+      4 => 'clase4', _ => 'clase5',
+    };
+    final where = StringBuffer("empresa_id = ? AND activo = 'Y' AND $col IS NOT NULL AND $col != ''");
+    final vars  = <Variable>[Variable.withInt(empresaId)];
+    if (n > 1 && clase1 != null) { where.write(' AND clase1 = ?'); vars.add(Variable.withString(clase1)); }
+    if (n > 2 && clase2 != null) { where.write(' AND clase2 = ?'); vars.add(Variable.withString(clase2)); }
+    if (n > 3 && clase3 != null) { where.write(' AND clase3 = ?'); vars.add(Variable.withString(clase3)); }
+    if (n > 4 && clase4 != null) { where.write(' AND clase4 = ?'); vars.add(Variable.withString(clase4)); }
+    if (proveedorNombre != null) { where.write(' AND proveedor_nombre = ?'); vars.add(Variable.withString(proveedorNombre)); }
+    if (familiaNombre   != null) { where.write(' AND familia_nombre = ?');   vars.add(Variable.withString(familiaNombre)); }
+    final rows = await customSelect(
+      'SELECT DISTINCT $col FROM articulos_local WHERE $where ORDER BY $col',
+      variables: vars,
+      readsFrom: {articulosLocal},
+    ).get();
+    return rows.map((r) => r.read<String>(col)).toList();
   }
 
   Future<ArticulosLocalData?> getArticuloById(int empresaId, int articuloId) {
@@ -131,15 +172,16 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> updateArticuloFields(int empresaId, int articuloId, {
-    String? cbarra, double? peso, double? unicaj, double? unipal,
+    String? cbarra, String? ubicacion, double? peso, double? unicaj, double? unipal,
   }) {
     return (update(articulosLocal)..where((t) =>
             t.empresaId.equals(empresaId) & t.articuloId.equals(articuloId)))
         .write(ArticulosLocalCompanion(
-          codigoAlternativo1: cbarra != null ? Value(cbarra) : const Value.absent(),
-          peso:   peso   != null ? Value(peso)   : const Value.absent(),
-          unicaj: unicaj != null ? Value(unicaj) : const Value.absent(),
-          unipal: unipal != null ? Value(unipal) : const Value.absent(),
+          codigoAlternativo1: cbarra    != null ? Value(cbarra)    : const Value.absent(),
+          ubicacion:          ubicacion != null ? Value(ubicacion) : const Value.absent(),
+          peso:               peso      != null ? Value(peso)      : const Value.absent(),
+          unicaj:             unicaj    != null ? Value(unicaj)    : const Value.absent(),
+          unipal:             unipal    != null ? Value(unipal)    : const Value.absent(),
         ));
   }
 
@@ -188,6 +230,15 @@ class AppDatabase extends _$AppDatabase {
           sincronizado: const Value(true),
           fechaSync: Value(DateTime.now()),
         ));
+  }
+
+  /// Elimina una cabecera de inventario y todas sus líneas.
+  Future<void> deleteInventario(int cabeceraId) async {
+    await (delete(lineasInventarioLocal)
+          ..where((t) => t.cabeceraId.equals(cabeceraId)))
+        .go();
+    await (delete(cabecerasInventarioLocal)..where((t) => t.id.equals(cabeceraId)))
+        .go();
   }
 
   // --- Inventarios: líneas ---

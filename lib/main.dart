@@ -214,5 +214,16 @@ ThemeData _buildTheme(Brightness brightness) {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
+    dialogTheme: DialogThemeData(
+      titleTextStyle: GoogleFonts.inter(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: colorScheme.onSurface,
+      ),
+      contentTextStyle: GoogleFonts.inter(
+        fontSize: 14,
+        color: colorScheme.onSurface,
+      ),
+    ),
   );
 }

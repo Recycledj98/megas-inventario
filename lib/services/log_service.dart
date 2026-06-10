@@ -110,6 +110,15 @@ class LogService {
     } catch (_) {}
   }
 
+  /// Borra el registro de auditoría. Solo debe invocarse tras validar la
+  /// contraseña de administración (pantalla de registros).
+  static Future<void> limpiarAuditoria() async {
+    try {
+      final file = await _archivoAuditoria();
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   /// Devuelve el registro de auditoría de más reciente a más antiguo.
   static Future<List<LogEntry>> obtenerAuditoria() async {
     try {

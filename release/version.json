@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
+  "version": "2.4.4",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Auditoría permanente de movimientos y configuración (nunca se borra)"
+  "notas": "Envío mucho más rápido: solo se suben los registros modificados y añadidos (no los DBF enteros), y los índices de STOCKLOT solo se regeneran si hay lotes nuevos o cambios de caducidad. Incluye timeout de envío, reenvío desde histórico, filtros clase 4-5 y borrados bajo contraseña."
 }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'config_service.dart';
 
 class UpdateInfo {
   final String version;
@@ -158,6 +159,81 @@ class UpdateService {
       },
     );
 
-    await OpenFilex.open(savePath);
+    final result = await OpenFilex.open(savePath);
+    if (result.type != ResultType.done) {
+      throw Exception(result.message.isNotEmpty ? result.message : 'No se pudo abrir el instalador');
+    }
+  }
+
+  static const _backupFilename = 'megas_config_backup.json';
+
+  // Candidatos en orden: Downloads público (sobrevive desinstalar) → externo app → interno
+  static Future<List<String>> _backupCandidates() async {
+    final paths = <String>[];
+    // 1. Public Downloads (sobrevive desinstalar, requiere WRITE_EXTERNAL_STORAGE en Android ≤ 10)
+    paths.add('/storage/emulated/0/Download/$_backupFilename');
+    // 2. App-specific external (no sobrevive, pero sirve para upgrades)
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) paths.add('${ext.path}/$_backupFilename');
+    } catch (_) {}
+    // 3. Internal documents (último recurso)
+    try {
+      final doc = await getApplicationDocumentsDirectory();
+      paths.add('${doc.path}/$_backupFilename');
+    } catch (_) {}
+    return paths;
+  }
+
+  /// Guarda la config en el primer directorio donde tenga permiso de escritura.
+  /// Devuelve la ruta usada, o lanza si ninguna funcionó.
+  static Future<String> saveConfigBackup() async {
+    final json = jsonEncode(ConfigService.exportToJson());
+    final candidates = await _backupCandidates();
+    for (final path in candidates) {
+      try {
+        await File(path).writeAsString(json, flush: true);
+        debugPrint('ConfigBackup guardado en: $path');
+        return path;
+      } catch (_) {
+        debugPrint('ConfigBackup no pudo escribir en: $path');
+      }
+    }
+    throw Exception('No se pudo guardar el backup de configuración en ninguna ruta.');
+  }
+
+  /// Busca y restaura el backup automáticamente. Devuelve true si se restauró.
+  static Future<bool> restoreConfigBackupIfExists() async {
+    final candidates = await _backupCandidates();
+    for (final path in candidates) {
+      final file = File(path);
+      if (!file.existsSync()) continue;
+      try {
+        final json = await file.readAsString();
+        final data = jsonDecode(json) as Map<String, dynamic>;
+        await ConfigService.importFromJson(data);
+        await file.delete();
+        debugPrint('ConfigBackup restaurado desde: $path');
+        return true;
+      } catch (e) {
+        debugPrint('ConfigBackup error leyendo $path: $e');
+      }
+    }
+    return false;
+  }
+
+  /// Compara dos versiones semánticas. Devuelve -1 / 0 / 1.
+  static int compareVersions(String a, String b) {
+    List<int> parse(String v) =>
+        v.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    final la = parse(a);
+    final lb = parse(b);
+    for (int i = 0; i < 3; i++) {
+      final av = i < la.length ? la[i] : 0;
+      final bv = i < lb.length ? lb[i] : 0;
+      if (av < bv) return -1;
+      if (av > bv) return 1;
+    }
+    return 0;
   }
 }

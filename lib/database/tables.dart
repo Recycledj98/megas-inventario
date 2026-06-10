@@ -20,6 +20,11 @@ class ArticulosLocal extends Table {
   RealColumn get peso    => real().nullable()();
   RealColumn get unicaj  => real().nullable()();
   RealColumn get unipal  => real().nullable()();
+  TextColumn get clase1  => text().nullable()(); // CODIG1_ART
+  TextColumn get clase2  => text().nullable()(); // CODIG2_ART
+  TextColumn get clase3  => text().nullable()(); // CODIG3_ART
+  TextColumn get clase4  => text().nullable()(); // CODIG4_ART
+  TextColumn get clase5  => text().nullable()(); // CODIG5_ART
   TextColumn get activo => text().withDefault(const Constant('Y'))();
   DateTimeColumn get ultimaSync => dateTime()();
 
