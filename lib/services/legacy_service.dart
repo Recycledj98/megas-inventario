@@ -730,10 +730,9 @@ class LegacyService {
       // Regenerar en memoria los índices NTX de los DBF cuyo contenido
       // indexado cambió: appends (registros nuevos fuera del árbol B) o
       // cambios de FECCAD_LOT. Los updates de stock no tocan ninguna clave.
+      // Como en 2.4.0: siempre se regeneran los índices de ambas tablas.
       final ntxFiles = <String, Uint8List>{};
-      if (stoDbf.hasAppends || stocklotClaveCambiada) {
-        await _regenerarIndices(smb, 'STOCKLOT.DBF', stoDbf, ntxFiles, fase);
-      }
+      await _regenerarIndices(smb, 'STOCKLOT.DBF', stoDbf, ntxFiles, fase);
       if (esDbf != null && movimientos > 0) {
         await _regenerarIndices(smb, 'E_S_ALMA.DBF', esDbf, ntxFiles, fase);
       }
@@ -741,17 +740,17 @@ class LegacyService {
       fase('índices regenerados en memoria: ${ntxFiles.length} '
           '(${(ntxFiles.values.fold<int>(0, (s, b) => s + b.length) / 1024).round()} KB)');
 
-      // Escribir al servidor (aún con nombre temporal) solo lo cambiado:
-      // registros modificados + appends + header, no los archivos enteros.
-      await _writeDbfRanges(smb, _lockedName(acquired, 'ARTICULO.DBF'), artDbf);
-      await _writeDbfRanges(smb, _lockedName(acquired, 'STOCKLOT.DBF'), stoDbf);
+      // Escritura de archivos completos, como en 2.4.0 (la escritura por
+      // rangos queda desactivada mientras se verifica en el servidor real).
+      await _writeFile(smb, _lockedName(acquired, 'ARTICULO.DBF'), artDbf.toBytes());
+      await _writeFile(smb, _lockedName(acquired, 'STOCKLOT.DBF'), stoDbf.toBytes());
       if (esDbf  != null && movimientos > 0) {
-        await _writeDbfRanges(smb, _lockedName(acquired, 'E_S_ALMA.DBF'), esDbf);
+        await _writeFile(smb, _lockedName(acquired, 'E_S_ALMA.DBF'), esDbf.toBytes());
       }
-      fase('DBF actualizados por rangos: ARTICULO ${artDbf.dirtyRecords.length} '
-          'modificados, STOCKLOT ${stoDbf.dirtyRecords.length} modificados '
-          '+${stoDbf.numRecords - stoDbf.originalNumRecords} nuevos, '
-          'E_S_ALMA +${esDbf == null ? 0 : esDbf.numRecords - esDbf.originalNumRecords} movimientos');
+      fase('DBF escritos completos: ARTICULO ${artDbf.dirtyRecords.length} '
+          'modificados, STOCKLOT +${stoDbf.numRecords - stoDbf.originalNumRecords} nuevos, '
+          'E_S_ALMA +${esDbf == null ? 0 : esDbf.numRecords - esDbf.originalNumRecords} movimientos'
+          '${stocklotClaveCambiada ? ', caducidades modificadas' : ''}');
 
       // PARAMETR.DBF: escritura por rango de solo los bytes VALOR_PAR del
       // registro E_S_EMPR. Reescribir el archivo entero pisaría contadores
