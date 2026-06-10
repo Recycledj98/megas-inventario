@@ -1,5 +1,5 @@
 ﻿{
-  "version": "2.5.4",
+  "version": "2.5.5",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Los indices se truncan tras subirlos (limpia colas muertas de indices antiguos mas grandes)."
+  "notas": "Nombre canonico E_S_ALMA.DBF en todas las operaciones (el ciclo de renombrado ya no altera el casing del archivo en el servidor)."
 }

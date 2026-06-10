@@ -506,10 +506,10 @@ class LegacyService {
 
   // ── ENVIAR ─────────────────────────────────────────────────────────────────
   // Replica PDA_Envia_Inventario (GCPDA1.PRG línea 18205):
-  //   - Abre ARTICULO.DBF + STOCKLOT.DBF + E_S_Alma.DBF + PARAMETR.DBF
+  //   - Abre ARTICULO.DBF + STOCKLOT.DBF + E_S_ALMA.DBF + PARAMETR.DBF
   //   - Por cada artículo contado: aplica diff a STOCK#_ART
   //   - Por cada lote: aplica diff a STOCKLOT.UNIDAD_LOT
-  //   - Graba 2 registros en E_S_Alma: "INVENTARIO ANTES" (S) + "INVENTARIO OK" (E)
+  //   - Graba 2 registros en E_S_ALMA: "INVENTARIO ANTES" (S) + "INVENTARIO OK" (E)
   //   - Actualiza contador E_S_EMPR en PARAMETR.DBF
 
   Future<LegacyEnvioResult> enviar(
@@ -554,17 +554,17 @@ class LegacyService {
       // sesión (tabla de parámetros) y aquí solo se actualiza por rango el
       // contador E_S_EMPR, que nadie más toca sin tener E_S_ALMA abierto.
       final lockFiles = ['ARTICULO.DBF', 'STOCKLOT.DBF'];
-      if (await _exists(smb, 'E_S_Alma.DBF')) lockFiles.add('E_S_Alma.DBF');
+      if (await _exists(smb, 'E_S_ALMA.DBF')) lockFiles.add('E_S_ALMA.DBF');
       acquired = await _acquireExclusive(smb, lockFiles);
 
       // Leer archivos obligatorios del servidor (ya con nombre temporal)
       final artDbf = DbfFile.open(await _readFile(smb, _lockedName(acquired, 'ARTICULO.DBF')));
       final stoDbf = DbfFile.open(await _readFile(smb, _lockedName(acquired, 'STOCKLOT.DBF')));
 
-      // E_S_Alma.DBF y PARAMETR.DBF opcionales (si fallan no bloqueamos el envío)
+      // E_S_ALMA.DBF y PARAMETR.DBF opcionales (si fallan no bloqueamos el envío)
       DbfFile? esDbf;
       DbfFile? parDbf;
-      try { esDbf  = DbfFile.open(await _readFile(smb, _lockedName(acquired, 'E_S_Alma.DBF'))); } catch (_) {}
+      try { esDbf  = DbfFile.open(await _readFile(smb, _lockedName(acquired, 'E_S_ALMA.DBF'))); } catch (_) {}
       try { parDbf = DbfFile.open(await _readFile(smb, 'PARAMETR.DBF')); } catch (_) {}
       fase('leídos ARTICULO (${artDbf.numRecords}), STOCKLOT (${stoDbf.numRecords}), '
           'E_S_ALMA (${esDbf?.numRecords ?? 'NO DISPONIBLE'})');
@@ -746,7 +746,7 @@ class LegacyService {
       await _writeDbfRanges(smb, _lockedName(acquired, 'ARTICULO.DBF'), artDbf);
       await _writeDbfRanges(smb, _lockedName(acquired, 'STOCKLOT.DBF'), stoDbf);
       if (esDbf  != null && movimientos > 0) {
-        await _writeDbfRanges(smb, _lockedName(acquired, 'E_S_Alma.DBF'), esDbf);
+        await _writeDbfRanges(smb, _lockedName(acquired, 'E_S_ALMA.DBF'), esDbf);
       }
       fase('DBF actualizados por rangos: ARTICULO ${artDbf.dirtyRecords.length} '
           'modificados, STOCKLOT ${stoDbf.dirtyRecords.length} modificados '
@@ -781,7 +781,7 @@ class LegacyService {
       // debe reflejar los movimientos añadidos.
       if (esDbf != null && movimientos > 0) {
         final head = await smb
-            .readFileRange(_path(_lockedName(acquired, 'E_S_Alma.DBF')),
+            .readFileRange(_path(_lockedName(acquired, 'E_S_ALMA.DBF')),
                 offset: 4, length: 4)
             .timeout(_smbTimeout);
         final n = ByteData.sublistView(head).getUint32(0, Endian.little);
