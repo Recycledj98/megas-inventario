@@ -504,6 +504,12 @@ class LegacyService {
     final smb = await _connect();
     var acquired = const <String>[];
     var envioCompletado = false;
+    // Diagnóstico: cada fase queda en el log de incidencias con su tiempo.
+    final sw = Stopwatch()..start();
+    void fase(String msg) {
+      LogService.registrar(
+          'ENVÍO [${(sw.elapsedMilliseconds / 1000).toStringAsFixed(1)}s] $msg');
+    }
     try {
       // Acceso exclusivo mientras dura el envío: si algún puesto tiene los
       // archivos abiertos, el rename falla y abortamos sin tocar nada.
@@ -523,6 +529,8 @@ class LegacyService {
       DbfFile? parDbf;
       try { esDbf  = DbfFile.open(await _readFile(smb, _lockedName(acquired, 'E_S_Alma.DBF'))); } catch (_) {}
       try { parDbf = DbfFile.open(await _readFile(smb, 'PARAMETR.DBF')); } catch (_) {}
+      fase('leídos ARTICULO (${artDbf.numRecords}), STOCKLOT (${stoDbf.numRecords}), '
+          'E_S_ALMA (${esDbf?.numRecords ?? 'NO DISPONIBLE'})');
 
       // Leer contador E_S_EMPR desde PARAMETR
       int esEmpr = 0;
@@ -697,6 +705,9 @@ class LegacyService {
         }
       }
 
+      fase('índices regenerados en memoria: ${ntxFiles.length} '
+          '(${(ntxFiles.values.fold<int>(0, (s, b) => s + b.length) / 1024).round()} KB)');
+
       // Escribir al servidor (aún con nombre temporal) solo lo cambiado:
       // registros modificados + appends + header, no los archivos enteros.
       await _writeDbfRanges(smb, _lockedName(acquired, 'ARTICULO.DBF'), artDbf);
@@ -704,6 +715,10 @@ class LegacyService {
       if (esDbf  != null && movimientos > 0) {
         await _writeDbfRanges(smb, _lockedName(acquired, 'E_S_Alma.DBF'), esDbf);
       }
+      fase('DBF actualizados por rangos: ARTICULO ${artDbf.dirtyRecords.length} '
+          'modificados, STOCKLOT ${stoDbf.dirtyRecords.length} modificados '
+          '+${stoDbf.numRecords - stoDbf.originalNumRecords} nuevos, '
+          'E_S_ALMA +${esDbf == null ? 0 : esDbf.numRecords - esDbf.originalNumRecords} movimientos');
 
       // PARAMETR.DBF: escritura por rango de solo los bytes VALOR_PAR del
       // registro E_S_EMPR. Reescribir el archivo entero pisaría contadores
@@ -722,7 +737,26 @@ class LegacyService {
       // Escribir índices regenerados (nombre definitivo: ningún puesto puede
       // tener la tabla abierta mientras su DBF está renombrado)
       for (final e in ntxFiles.entries) {
-        await _writeFile(smb, await _ntxRemoteName(smb, e.key), e.value);
+        final nombre = await _ntxRemoteName(smb, e.key);
+        await _writeFile(smb, nombre, e.value);
+        fase('subido índice $nombre (${(e.value.length / 1024).round()} KB)');
+      }
+
+      // Verificación: el contador de registros de E_S_ALMA en el servidor
+      // debe reflejar los movimientos añadidos.
+      if (esDbf != null && movimientos > 0) {
+        final head = await smb
+            .readFileRange(_path(_lockedName(acquired, 'E_S_Alma.DBF')),
+                offset: 4, length: 4)
+            .timeout(_smbTimeout);
+        final n = ByteData.sublistView(head).getUint32(0, Endian.little);
+        fase('verificación E_S_ALMA: $n registros en servidor '
+            '(esperados ${esDbf.numRecords})');
+        if (n != esDbf.numRecords) {
+          throw LegacyException(
+              'Verificación fallida: E_S_ALMA quedó con $n registros, '
+              'esperados ${esDbf.numRecords}');
+        }
       }
 
       envioCompletado = true;

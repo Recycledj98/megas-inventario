@@ -173,6 +173,7 @@ class DbfFile {
   // Para subir solo lo cambiado por SMB en vez del archivo completo:
   // registros preexistentes modificados + bloque añadido al final + header.
 
+  int get originalNumRecords => _originalNumRecords;
   bool get hasAppends => numRecords > _originalNumRecords;
   bool get hasChanges => hasAppends || _dirtyRecords.isNotEmpty;
   Set<int> get dirtyRecords => _dirtyRecords;

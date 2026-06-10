@@ -2294,13 +2294,12 @@ class _DialogFiltrosRecibirState extends State<_DialogFiltrosRecibir> {
                     ),
                   ),
 
-                // Clases de artículo (1-5) — solo se muestran las que tienen opciones
-                if (_clasesOpts.isNotEmpty) ...[
+                // Clases de artículo: siempre los 5 niveles (los que no tengan
+                // opciones en CLASEART/artículos quedan solo con "Todas")
+                if (widget.legacy != null) ...[
                   const SizedBox(height: 16),
-                  ...[for (int i = 1; i <= 5; i++) i]
-                      .where((i) => _clasesOpts.containsKey(i) && _clasesOpts[i]!.isNotEmpty)
-                      .map((i) {
-                    final opts = _clasesOpts[i]!;
+                  ...[for (int i = 1; i <= 5; i++) i].map((i) {
+                    final opts = _clasesOpts[i] ?? const <(String, String)>[];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: DropdownButtonFormField<String?>(
