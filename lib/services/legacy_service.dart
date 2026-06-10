@@ -771,6 +771,9 @@ class LegacyService {
       // tener la tabla abierta mientras su DBF está renombrado)
       for (final e in ntxFiles.entries) {
         await _writeFile(smb, e.key, e.value);
+        // writeFile no trunca: si el índice anterior era mayor quedaría cola
+        // muerta (p. ej. E_S_AL_5 de 380MB tras subir 75MB).
+        await smb.truncate(_path(e.key), e.value.length).timeout(_smbTimeout);
         fase('subido índice ${e.key} (${(e.value.length / 1024).round()} KB)');
       }
 
@@ -850,6 +853,7 @@ class LegacyService {
               (m) => LogService.registrar('GUARDAR ART: $m'));
           for (final e in ntxFiles.entries) {
             await _writeFile(smb, e.key, e.value);
+            await smb.truncate(_path(e.key), e.value.length).timeout(_smbTimeout);
           }
         }
       }

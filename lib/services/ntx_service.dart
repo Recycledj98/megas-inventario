@@ -81,6 +81,192 @@ class NtxHeaderInfo {
   }
 }
 
+/// Inserción incremental de claves en un NTX existente leyendo solo las
+/// páginas del camino de inserción (B-tree estándar con splits). Para
+/// archivos enormes (E_S_ALMA con >1M registros) donde el rebuild completo
+/// es inviable. Las páginas tocadas quedan en [dirtyPages]; si la raíz
+/// cambia, [headerDirty] y [headerBytes] reflejan el nuevo header.
+class NtxUpdater {
+  final Uint8List headerBytes;
+  final Future<Uint8List> Function(int offset) _readPage;
+  int _fileSize;
+  final Map<int, Uint8List> _pages = {};
+  final Set<int> _dirtyOffsets = {};
+  bool headerDirty = false;
+
+  late final int itemSize;
+  late final int keySize;
+  late final int maxItem;
+
+  NtxUpdater(this.headerBytes, this._readPage, this._fileSize) {
+    final bd = ByteData.sublistView(headerBytes);
+    itemSize = bd.getUint16(12, Endian.little);
+    keySize = bd.getUint16(14, Endian.little);
+    maxItem = bd.getUint16(18, Endian.little);
+    if (headerBytes[278] != 0) {
+      throw NtxException('índice UNIQUE no soportado');
+    }
+    if (itemSize != keySize + 8 || maxItem < 2) {
+      throw NtxException('header NTX no reconocido');
+    }
+  }
+
+  String get expression => NtxHeaderInfo.parse(headerBytes).expression;
+  int get newFileSize => _fileSize;
+  Map<int, Uint8List> get dirtyPages =>
+      {for (final o in _dirtyOffsets) o: _pages[o]!};
+
+  int get _root =>
+      ByteData.sublistView(headerBytes).getUint32(4, Endian.little);
+  set _root(int v) {
+    ByteData.sublistView(headerBytes).setUint32(4, v, Endian.little);
+    headerDirty = true;
+  }
+
+  Future<Uint8List> _page(int off) async =>
+      _pages[off] ??= Uint8List.fromList(await _readPage(off));
+
+  int _allocPage() {
+    final off = _fileSize;
+    _fileSize += _pageSize;
+    final p = Uint8List(_pageSize);
+    _rewritePage(p, const [], 0);
+    _pages[off] = p;
+    _dirtyOffsets.add(off);
+    return off;
+  }
+
+  int _count(Uint8List p) =>
+      ByteData.sublistView(p).getUint16(0, Endian.little);
+  int _slot(Uint8List p, int i) =>
+      ByteData.sublistView(p).getUint16(2 + i * 2, Endian.little);
+  int _child(Uint8List p, int i) =>
+      ByteData.sublistView(p).getUint32(_slot(p, i), Endian.little);
+  void _setChild(Uint8List p, int i, int v) =>
+      ByteData.sublistView(p).setUint32(_slot(p, i), v, Endian.little);
+  int _recno(Uint8List p, int i) =>
+      ByteData.sublistView(p).getUint32(_slot(p, i) + 4, Endian.little);
+  Uint8List _keyAt(Uint8List p, int i) {
+    final s = _slot(p, i);
+    return Uint8List.sublistView(p, s + 8, s + 8 + keySize);
+  }
+
+  int _cmp(Uint8List a, Uint8List b) {
+    for (int i = 0; i < keySize; i++) {
+      final d = a[i] - b[i];
+      if (d != 0) return d;
+    }
+    return 0;
+  }
+
+  /// Reescribe la página completa con [items] (child,recno,key) y el hijo
+  /// derecho [extraChild]; array de slots secuencial.
+  void _rewritePage(
+      Uint8List p, List<(int, int, Uint8List)> items, int extraChild) {
+    p.fillRange(0, _pageSize, 0);
+    final bd = ByteData.sublistView(p);
+    final base = 2 + (maxItem + 1) * 2;
+    for (int i = 0; i <= maxItem; i++) {
+      bd.setUint16(2 + i * 2, base + i * itemSize, Endian.little);
+    }
+    bd.setUint16(0, items.length, Endian.little);
+    for (int i = 0; i < items.length; i++) {
+      final s = base + i * itemSize;
+      bd.setUint32(s, items[i].$1, Endian.little);
+      bd.setUint32(s + 4, items[i].$2, Endian.little);
+      p.setRange(s + 8, s + 8 + keySize, items[i].$3);
+    }
+    bd.setUint32(base + items.length * itemSize, extraChild, Endian.little);
+  }
+
+  /// Inserta en página con hueco: rota un slot libre y desplaza el array.
+  void _insertAt(Uint8List p, int pos, int child, int recno, Uint8List key) {
+    final n = _count(p);
+    final bd = ByteData.sublistView(p);
+    final free = bd.getUint16(2 + (n + 1) * 2, Endian.little);
+    for (int i = n + 1; i > pos; i--) {
+      bd.setUint16(
+          2 + i * 2, bd.getUint16(2 + (i - 1) * 2, Endian.little), Endian.little);
+    }
+    bd.setUint16(2 + pos * 2, free, Endian.little);
+    bd.setUint32(free, child, Endian.little);
+    bd.setUint32(free + 4, recno, Endian.little);
+    p.setRange(free + 8, free + 8 + keySize, key);
+    bd.setUint16(0, n + 1, Endian.little);
+  }
+
+  Future<void> insertKey(int recno, Uint8List key) async {
+    if (key.length != keySize) {
+      throw NtxException('clave de ${key.length}B, índice de ${keySize}B');
+    }
+    final path = <(int, int)>[];
+    int off = _root;
+    while (true) {
+      final p = await _page(off);
+      final n = _count(p);
+      // Igualdad → a la derecha (las claves repetidas quedan por recno).
+      int pos = 0;
+      while (pos < n && _cmp(_keyAt(p, pos), key) <= 0) {
+        pos++;
+      }
+      final child = _child(p, pos); // pos==n → hijo derecho
+      if (child == 0) {
+        _insertLogical(off, pos, 0, recno, key, null, path);
+        return;
+      }
+      path.add((off, pos));
+      off = child;
+    }
+  }
+
+  /// Inserta (child,recno,key) en [pos] de la página [off]; si el item que
+  /// queda a la derecha debe re-apuntar (tras un split del hijo), se pasa en
+  /// [rightChildFix]. Hace split recursivo hacia arriba si no hay hueco.
+  void _insertLogical(int off, int pos, int child, int recno, Uint8List key,
+      int? rightChildFix, List<(int, int)> path) {
+    final p = _pages[off]!;
+    final n = _count(p);
+    if (n < maxItem) {
+      _insertAt(p, pos, child, recno, key);
+      if (rightChildFix != null) _setChild(p, pos + 1, rightChildFix);
+      _dirtyOffsets.add(off);
+      return;
+    }
+    // Split: pool ordenado de n+1 items + hijo derecho.
+    final items = [
+      for (int i = 0; i < n; i++)
+        (_child(p, i), _recno(p, i), Uint8List.fromList(_keyAt(p, i)))
+    ];
+    int extraChild = _child(p, n);
+    items.insert(pos, (child, recno, key));
+    if (rightChildFix != null) {
+      if (pos + 1 < items.length) {
+        items[pos + 1] = (rightChildFix, items[pos + 1].$2, items[pos + 1].$3);
+      } else {
+        extraChild = rightChildFix;
+      }
+    }
+    final m = items.length ~/ 2;
+    final median = items[m];
+    final rightOff = _allocPage();
+    _rewritePage(_pages[rightOff]!, items.sublist(m + 1), extraChild);
+    // La página original queda como mitad izquierda; su hijo derecho pasa a
+    // ser el hijo izquierdo de la mediana (subárbol entre ambas mitades).
+    _rewritePage(p, items.sublist(0, m), median.$1);
+    _dirtyOffsets.add(off);
+
+    if (path.isEmpty) {
+      final newRoot = _allocPage();
+      final rp = _pages[newRoot]!;
+      _rewritePage(rp, [(off, median.$2, median.$3)], rightOff);
+      _root = newRoot;
+      return;
+    }
+    final (parentOff, q) = path.removeLast();
+    _insertLogical(parentOff, q, off, median.$2, median.$3, rightOff, path);
+  }
+}
+
 class _Segment {
   final int offset; // offset dentro del registro crudo (flag incluido)
   final int length;

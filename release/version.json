@@ -1,5 +1,5 @@
 ﻿{
-  "version": "2.5.3",
+  "version": "2.5.4",
   "url": "https://github.com/Recycledj98/megas-inventario/releases/latest/download/megas_inventario.apk",
-  "notas": "Los indices se regeneran con la expresion de clave leida del propio servidor (cada instalacion puede indexar distinto) y solo si existen; nunca se crean nuevos. Verificacion de tamano de clave antes de escribir."
+  "notas": "Los indices se truncan tras subirlos (limpia colas muertas de indices antiguos mas grandes)."
 }
